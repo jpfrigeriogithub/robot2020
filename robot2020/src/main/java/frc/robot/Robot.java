@@ -10,54 +10,86 @@ package frc.robot;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj.Joystick;
+import edu.wpi.first.wpilibj.TimedRobot;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj.drive.* ;
+import edu.wpi.first.wpilibj.SpeedControllerGroup ;
+import edu.wpi.first.wpilibj.Talon;
+import edu.wpi.first.wpilibj.SpeedController ;
+import edu.wpi.first.wpilibj.Spark;
+import edu.wpi.first.wpilibj.XboxController;
+import edu.wpi.first.wpilibj.Victor;
+import edu.wpi.first.wpilibj.Timer;
+import com.ctre.phoenix.motorcontrol.can.* ;
+import com.ctre.phoenix.motorcontrol.* ;
+import com.revrobotics.CANSparkMax;
+import com.revrobotics.CANSparkMaxLowLevel.MotorType;
+import com.revrobotics.CANEncoder;
 
-/**
- * The VM is configured to automatically run this class, and to call the
- * functions corresponding to each mode, as described in the TimedRobot
- * documentation. If you change the name of this class or the package after
- * creating this project, you must also update the build.gradle file in the
- * project.
- */
+
+
 public class Robot extends TimedRobot {
   private static final String kDefaultAuto = "Default";
   private static final String kCustomAuto = "My Auto";
+  private static final String blahblahblah = "blah auton";
   private String m_autoSelected;
   private final SendableChooser<String> m_chooser = new SendableChooser<>();
 
-  /**
-   * This function is run when the robot is first started up and should be
-   * used for any initialization code.
-   */
+
+  // MOTORS:
+  CANSparkMax shooterWheel1;
+  CANSparkMax shooterWheel2;
+  WPI_TalonSRX talonLeftDrive;
+  WPI_TalonSRX talonRightDrive;
+  WPI_VictorSPX tiltMotor ;
+  WPI_VictorSPX leftDriveFollow ;
+  WPI_VictorSPX rightDriveFollow ;
+  WPI_VictorSPX dialMotor ;
+  WPI_VictorSPX intakeMotor;
+
+  // CONTROLLERS:
+  XboxController xbox = new XboxController(0);
+  Joystick joystick = new Joystick(1);
+
+  // Variables used in routines below:
+  Timer myClock = new Timer();
+
+
+
+
+
   @Override
   public void robotInit() {
     m_chooser.setDefaultOption("Default Auto", kDefaultAuto);
     m_chooser.addOption("My Auto", kCustomAuto);
+    m_chooser.addOption("blah", blahblahblah);
     SmartDashboard.putData("Auto choices", m_chooser);
+
+    myClock.start();
+
+    shooterWheel1 = new CANSparkMax(10, MotorType.kBrushless);
+    shooterWheel2 = new CANSparkMax(11, MotorType.kBrushless);
+    talonLeftDrive = new WPI_TalonSRX(1);
+    talonRightDrive = new WPI_TalonSRX(2);
+    leftDriveFollow = new WPI_VictorSPX(25);
+    rightDriveFollow = new WPI_VictorSPX(24);
+    dialMotor = new WPI_VictorSPX(21);
+    tiltMotor = new WPI_VictorSPX(22);
+    intakeMotor = new WPI_VictorSPX(23);
+
+
+  }
+  public void dosomething() {
+    SmartDashboard.putString("sommething", "did something");
   }
 
-  /**
-   * This function is called every robot packet, no matter the mode. Use
-   * this for items like diagnostics that you want ran during disabled,
-   * autonomous, teleoperated and test.
-   *
-   * <p>This runs after the mode specific periodic functions, but before
-   * LiveWindow and SmartDashboard integrated updating.
-   */
+
   @Override
   public void robotPeriodic() {
   }
 
-  /**
-   * This autonomous (along with the chooser code above) shows how to select
-   * between different autonomous modes using the dashboard. The sendable
-   * chooser code works with the Java SmartDashboard. If you prefer the
-   * LabVIEW Dashboard, remove all of the chooser code and uncomment the
-   * getString line to get the auto name from the text box below the Gyro
-   *
-   * <p>You can add additional auto modes by adding additional comparisons to
-   * the switch structure below with additional strings. If using the
-   * SendableChooser make sure to add them to the chooser code above as well.
-   */
+
   @Override
   public void autonomousInit() {
     m_autoSelected = m_chooser.getSelected();
@@ -73,12 +105,27 @@ public class Robot extends TimedRobot {
     switch (m_autoSelected) {
       case kCustomAuto:
         // Put custom auto code here
+        SmartDashboard.putString("custome code:", "custom");
+        shooterWheel1.set(1) ;
+
         break;
-      case kDefaultAuto:
-      default:
+
+        case kDefaultAuto:
+        default:
         // Put default auto code here
+        SmartDashboard.putString("custome code:", "default");
+
         break;
-    }
+
+        case blahblahblah:
+        shooterWheel1.set(.5) ;
+        SmartDashboard.putString("custome code:", "blah");
+        break ;
+
+
+
+      }
+
   }
 
   /**
