@@ -27,7 +27,7 @@ import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.Victor;
 import edu.wpi.first.wpilibj.Timer;
 import com.ctre.phoenix.motorcontrol.can.* ;
-
+import edu.wpi.first.wpilibj.AnalogInput ;
 import java.util.Map;
 
 import com.ctre.phoenix.motorcontrol.* ;
@@ -76,6 +76,8 @@ public class Robot extends TimedRobot {
   boolean move_dial_one_notch = false ;
   double dial_notch_begin_encoder_value = 0 ;
   boolean dial_is_moving_one_notch = false ;
+  AnalogInput beam1 = new AnalogInput(0) ;
+  AnalogInput beam2 = new AnalogInput(1) ;
 
   // TILT:
   String tilt_goal = "floor" ;
@@ -224,20 +226,44 @@ public class Robot extends TimedRobot {
       tilt_goal = "high" ;
       tiltHighControl.setBoolean(false) ;
     } else {
-      tilt_goal = "" ;
+      //tilt_goal = "" ;
     }
-    do_tilting();
+   // do_tilting();
 
 
   }
   // -------------------------------------------------------------
+  // -------------------------------------------------------------
   // TILT CONTROL
   public void do_tilting() {
     if (tilt_goal == "") { 
-      tiltMotor.set(0) ;
+      //tiltMotor.set(0) ;
       return ;
     }
-    // 250 = low    400 = high.
+
+    double height = tiltEncoder.getDistance();
+    double low_goal = 250 ;
+    double high_goal = 400 ;
+
+    if (tilt_goal == "floor"){
+      if (height < 25 && tiltMotor.get() == 0) { return ;}
+      if (height < 25) {
+        System.out.println("do_tilting, to floor: current tilt height: " + height + ", setting to zero.") ;
+        tiltMotor.set(0);
+        return ;
+      }
+      // means the speed is above 25.  slowly lower it.
+      double newLowerSpeed = tiltMotor.get() - .05 ;
+      if (newLowerSpeed < 0) { tiltMotor.set(0); return ;} // shouldn't ever happen. :-()
+      System.out.println("do_tilting, floor: lowering motor from " + tiltMotor.get() + " TO " + newLowerSpeed + ".");
+      tiltMotor.set(newLowerSpeed);
+      return ;
+    }
+
+    if (tilt_goal == "low") {
+
+    }
+
 
 
   }
@@ -293,7 +319,10 @@ public class Robot extends TimedRobot {
   //   -------------------------------------------------------------
   public void all_values_to_dashboard() {
     SmartDashboard.putNumber("TILT:",tiltEncoder.getDistance());
+    SmartDashboard.putNumber("TILT-SPEED:",tiltEncoder.getRate());
     SmartDashboard.putNumber("DIAL:",dialEncoder.getDistance());
+    SmartDashboard.putNumber("beam-1:", beam1.getAverageVoltage()) ;
+    SmartDashboard.putNumber("beam-2:", beam2.getAverageVoltage()) ;
 
   }
 
