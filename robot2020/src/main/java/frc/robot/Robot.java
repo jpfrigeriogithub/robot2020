@@ -77,12 +77,18 @@ public class Robot extends TimedRobot {
   double dial_notch_begin_encoder_value = 0 ;
   boolean dial_is_moving_one_notch = false ;
 
+  // TILT:
+  String tilt_goal = "floor" ;
+
   //network tables:
   private NetworkTableEntry intakeControl;
   private NetworkTableEntry shooterControl;
   private NetworkTableEntry shooterControlLow;
   private NetworkTableEntry dialNotchControl ;
 
+  private NetworkTableEntry tiltFloorControl ;
+  private NetworkTableEntry tiltLowControl ;
+  private NetworkTableEntry tiltHighControl ;
 
 
   @Override
@@ -94,7 +100,6 @@ public class Robot extends TimedRobot {
     m_chooser.addOption("My Auto", kCustomAuto);
     m_chooser.addOption("blah", blahblahblah);
     SmartDashboard.putData("Auto choices", m_chooser);
-
 
 
     // motors:
@@ -126,10 +131,6 @@ public class Robot extends TimedRobot {
 
 
   }
-  
-  public void dosomething() {
-    SmartDashboard.putString("sommething", "did something");
-  }
 
 
   @Override
@@ -159,26 +160,17 @@ public class Robot extends TimedRobot {
       case kCustomAuto:
         // Put custom auto code here
         SmartDashboard.putString("custome code:", "custom");
-        shooterWheel1.set(1) ;
-
         break;
 
         case kDefaultAuto:
         default:
         // Put default auto code here
         SmartDashboard.putString("custome code:", "default");
-        shooterWheel1.set(0) ;
-        shooterWheel2.set(0) ;
-
         break;
 
         case blahblahblah:
-        shooterWheel1.set(.5) ;
-        shooterWheel2.set(.5) ;
         SmartDashboard.putString("custome code:", "blah");
         break ;
-
-
 
       }
 
@@ -190,7 +182,14 @@ public class Robot extends TimedRobot {
   @Override
   public void teleopPeriodic() {
     all_values_to_dashboard();
+
+    // more stuff here.
+
   }
+
+  // -------------------------------------------------------------
+  // -------------------------------------------------------------
+  // -------------------------------------------------------------
 
   /**
    * This function is called periodically during test mode.
@@ -214,11 +213,37 @@ public class Robot extends TimedRobot {
       dialNotchControl.setBoolean(false) ;
     }
     dial_intake_turning();
-  
+
+    if (tiltFloorControl.getBoolean(false)) {
+      tilt_goal = "floor" ;
+      tiltFloorControl.setBoolean(false) ;
+    } else if (tiltLowControl.getBoolean(false)) {
+      tilt_goal = "low" ;
+      tiltLowControl.setBoolean(false) ;
+    } else if (tiltHighControl.getBoolean(false)) {
+      tilt_goal = "high" ;
+      tiltHighControl.setBoolean(false) ;
+    } else {
+      tilt_goal = "" ;
+    }
+    do_tilting();
+
+
+  }
+  // -------------------------------------------------------------
+  // TILT CONTROL
+  public void do_tilting() {
+    if (tilt_goal == "") { 
+      tiltMotor.set(0) ;
+      return ;
+    }
+    // 250 = low    400 = high.
 
 
   }
 
+  // -------------------------------------------------------------
+  //  dial around one ball at a time.
   public void dial_intake_turning() {
     if (move_dial_one_notch == true) {
       dial_notch_begin_encoder_value = dialEncoder.getDistance();
@@ -226,7 +251,6 @@ public class Robot extends TimedRobot {
       dialMotor.set(1) ;
       move_dial_one_notch = false ;
     }
-
     if (dial_is_moving_one_notch == true) {
       // it's already moving.  decide if we should keep moving it, or we've finished.
       double current_encoder_value = dialEncoder.getDistance();
@@ -242,9 +266,10 @@ public class Robot extends TimedRobot {
     } else {
       // nothing to do here.. 
     }
-
   }
 
+  // -------------------------------------------------------------
+  // shooter wheel controls:
   public void stop_shooter_wheels(){
     shooterWheel1.set(0);
     shooterWheel2.set(0) ;
@@ -261,45 +286,73 @@ public class Robot extends TimedRobot {
     shooterWheel1.set(-.6);
     shooterWheel2.set(.6) ;
   }
+  // -------------------------------------------------------------
+  // -------------------------------------------------------------
 
 
+  //   -------------------------------------------------------------
   public void all_values_to_dashboard() {
     SmartDashboard.putNumber("TILT:",tiltEncoder.getDistance());
     SmartDashboard.putNumber("DIAL:",dialEncoder.getDistance());
 
   }
 
+  // -------------------------------------------------------------
   public void setupTestButtons() {
     intakeControl = Shuffleboard.getTab("controls")
     .add("intake in",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(10, 1)
+    .withPosition(5, 1)
     .withSize(3, 2)
     .getEntry();
 
     shooterControl = Shuffleboard.getTab("controls")
     .add("shoot out",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(10, 3)
+    .withPosition(5, 3)
     .withSize(3, 2)
     .getEntry();
 
     shooterControlLow = Shuffleboard.getTab("controls")
     .add("shoot out LOW",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(10, 5)
+    .withPosition(5, 5)
     .withSize(3, 2)
     .getEntry();
 
     dialNotchControl = Shuffleboard.getTab("controls")
     .add("move-dial",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(10, 7)
+    .withPosition(5, 7)
+    .withSize(3, 2)
+    .getEntry();
+
+    tiltFloorControl = Shuffleboard.getTab("controls")
+    .add("tilt-to-floor",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(10, 1)
+    .withSize(3, 2)
+    .getEntry();
+
+    tiltLowControl = Shuffleboard.getTab("controls")
+    .add("tilt-LOW",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(10, 3)
+    .withSize(3, 2)
+    .getEntry();
+
+    tiltHighControl = Shuffleboard.getTab("controls")
+    .add("tilt-HIGH",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(10, 5)
     .withSize(3, 2)
     .getEntry();
 
 
     }
+
+  // -------------------------------------------------------------
+  // -------------------------------------------------------------
 
 
 
