@@ -29,6 +29,8 @@ import edu.wpi.first.wpilibj.Timer;
 import com.ctre.phoenix.motorcontrol.can.* ;
 import edu.wpi.first.wpilibj.AnalogInput ;
 import java.util.Map;
+import edu.wpi.first.wpilibj.controller.*;
+import javax.print.attribute.standard.JobPrioritySupported;
 
 import com.ctre.phoenix.motorcontrol.* ;
 import com.revrobotics.CANSparkMax;
@@ -45,6 +47,9 @@ public class Robot extends TimedRobot {
   private String m_autoSelected;
   private final SendableChooser<String> m_chooser = new SendableChooser<>();
 
+  double Kp = 5 ; double Ki = .02 ; double Kd = 2 ;
+  PIDController pid ;
+
 
   // MOTORS:
   CANSparkMax shooterWheel1;
@@ -56,6 +61,7 @@ public class Robot extends TimedRobot {
   WPI_VictorSPX rightDriveFollow ;
   WPI_VictorSPX dialMotor ;
   WPI_VictorSPX intakeMotor;
+  
 
   // CONTROLLERS:
   XboxController xbox = new XboxController(0);
@@ -80,7 +86,8 @@ public class Robot extends TimedRobot {
   AnalogInput beam2 = new AnalogInput(1) ;
 
   // TILT:
-  String tilt_goal = "floor" ;
+  String tiltGoal = "floor" ;
+  double tiltSpeed = 100 ;
 
   //network tables:
   private NetworkTableEntry intakeControl;
@@ -91,6 +98,9 @@ public class Robot extends TimedRobot {
   private NetworkTableEntry tiltFloorControl ;
   private NetworkTableEntry tiltLowControl ;
   private NetworkTableEntry tiltHighControl ;
+
+  private NetworkTableEntry getKp ;
+  private NetworkTableEntry getKi ;
 
 
   @Override
@@ -115,7 +125,7 @@ public class Robot extends TimedRobot {
     tiltMotor = new WPI_VictorSPX(22);
     intakeMotor = new WPI_VictorSPX(23);
 
-    setupTestButtons() ;
+    setupTestButtons() ; // test mode buttons on shuffleboard.
 
     // encoders:
     tiltEncoder = new Encoder (0,1);
@@ -130,6 +140,7 @@ public class Robot extends TimedRobot {
     rightDriveFollow.follow(talonRightDrive);
     drive = new DifferentialDrive(talonLeftDrive,talonRightDrive);
 
+    
 
 
   }
@@ -137,6 +148,8 @@ public class Robot extends TimedRobot {
 
   @Override
   public void robotPeriodic() {
+    all_values_to_dashboard();
+
   }
 
 
@@ -144,6 +157,13 @@ public class Robot extends TimedRobot {
   public void autonomousInit() {
       tiltEncoder.reset();
       dialEncoder.reset() ;
+
+      Kp = getKp.getDouble(0) ;
+      Ki = getKi.getDouble(0);
+      SmartDashboard.putNumber("KP", Kp) ;
+      SmartDashboard.putNumber("KI", Ki);
+      pid = new PIDController(Kp, Ki, Kd);
+      pid.setTolerance(5,10);
 
 
     m_autoSelected = m_chooser.getSelected();
@@ -157,7 +177,14 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void autonomousPeriodic() {
-    all_values_to_dashboard();
+
+      double answer = pid.calculate(tiltEncoder.getDistance(), 200);
+      answer = answer / 10000 + .25;
+      SmartDashboard.putNumber("answer", answer);
+      SmartDashboard.putBoolean("at setpoint", pid.atSetpoint()) ;
+      tiltMotor.set(answer) ;
+
+
     switch (m_autoSelected) {
       case kCustomAuto:
         // Put custom auto code here
@@ -183,8 +210,7 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void teleopPeriodic() {
-    all_values_to_dashboard();
-
+    normal_driving();
     // more stuff here.
 
   }
@@ -198,37 +224,44 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void testPeriodic() {
-    all_values_to_dashboard();
 
+    // SHOOTER WHEELS
     if (intakeControl.getBoolean(false)){
       run_shooter_wheels_for_intake() ;
     } else if (shooterControl.getBoolean(false)){
-      run_shooter_wheels_for_shooting_out() ;
+      run_shooter_wheels_for_shooting_out_high() ;
     } else if (shooterControlLow.getBoolean(false)){
       run_shooter_wheels_for_shooting_out_low() ;
     } else {
       stop_shooter_wheels();
     }
 
+
+    // DIAL 
     if (dialNotchControl.getBoolean(false))  {
       move_dial_one_notch = true ;
       dialNotchControl.setBoolean(false) ;
     }
     dial_intake_turning();
 
+
+    // TILTING:
     if (tiltFloorControl.getBoolean(false)) {
-      tilt_goal = "floor" ;
+      tiltGoal = "floor" ;
       tiltFloorControl.setBoolean(false) ;
     } else if (tiltLowControl.getBoolean(false)) {
-      tilt_goal = "low" ;
+      tiltGoal = "low" ;
       tiltLowControl.setBoolean(false) ;
     } else if (tiltHighControl.getBoolean(false)) {
-      tilt_goal = "high" ;
+      tiltGoal = "high" ;
       tiltHighControl.setBoolean(false) ;
     } else {
-      //tilt_goal = "" ;
+      //tiltGoal = "" ;
     }
-   // do_tilting();
+    //do_tilting();
+
+
+
 
 
   }
@@ -236,16 +269,17 @@ public class Robot extends TimedRobot {
   // -------------------------------------------------------------
   // TILT CONTROL
   public void do_tilting() {
-    if (tilt_goal == "") { 
+    if (tiltGoal == "") { 
       //tiltMotor.set(0) ;
       return ;
     }
 
+
     double height = tiltEncoder.getDistance();
     double low_goal = 250 ;
-    double high_goal = 400 ;
+    double high_goal = 300 ;
 
-    if (tilt_goal == "floor"){
+    if (tiltGoal == "floor"){
       if (height < 25 && tiltMotor.get() == 0) { return ;}
       if (height < 25) {
         System.out.println("do_tilting, to floor: current tilt height: " + height + ", setting to zero.") ;
@@ -253,20 +287,89 @@ public class Robot extends TimedRobot {
         return ;
       }
       // means the speed is above 25.  slowly lower it.
-      double newLowerSpeed = tiltMotor.get() - .05 ;
+      double newLowerSpeed = tiltMotor.get() - .005 ;
       if (newLowerSpeed < 0) { tiltMotor.set(0); return ;} // shouldn't ever happen. :-()
       System.out.println("do_tilting, floor: lowering motor from " + tiltMotor.get() + " TO " + newLowerSpeed + ".");
       tiltMotor.set(newLowerSpeed);
       return ;
     }
 
-    if (tilt_goal == "low") {
 
+    if (tiltGoal == "low") {
+      if ( (low_goal - height) > 100) {
+        tiltMotor.set(.35);
+        return ;
+      }
+      if ( (low_goal - height) > 50) {
+        tiltMotor.set(2.5) ;
+        return ;
+      }
+      tilthold(height,low_goal) ;
+      return ;
+    }
+    
+    if (tiltGoal == "high") {
+      if (Math.abs( high_goal - height) < 20) {
+        return ;
+      }
+      if (height < high_goal) {
+        if (tiltMotor.get() == 0) {
+          tiltMotor.set(.2);
+        } else {
+          tiltMotor.set( tiltMotor.get() + .02) ;
+        }
+        return ;
+      }
+      if (height > high_goal) {
+        tiltMotor.set( tiltMotor.get() - .02) ;
+        return ;
+      }
+    }
+  }
+  
+  public void tilthold(double height, double goal) {
+    if (height < goal && tiltEncoder.getRate() < 0){
+        tiltMotor.set( tiltMotor.get() + .005) ;
+        return;
+    }
+    if (height > goal && tiltEncoder.getRate() > 0) {
+        tiltMotor.set( tiltMotor.get() - .005) ;
+    }
+  }
+
+  public void DoTilt(boolean up) {
+    // max speed = 100.  slow it down if it's faster than that.
+    // try to move tilt up/down at $tiltSpeed ; (set at top)
+
+    
+    double buffer = 5 ;
+    // going up? and speed too slow?
+    if (up == true && tiltEncoder.getRate() < (tiltSpeed - buffer)) {
+      tiltMotor.set( (tiltMotor.get() + .05));
+      return;
+    } 
+    // going up, but going too fast...
+    if (up == true && tiltEncoder.getRate() > (tiltSpeed + buffer)){
+      tiltMotor.set( (tiltMotor.get() - .05));
+      return;
+    }
+
+    // going down, going too slow.
+    if (up == false && tiltEncoder.getRate() > (-tiltSpeed + buffer)){
+      tiltMotor.set( (tiltMotor.get() - .05));
+      return;
+    }
+
+    // going down too fast.
+    if (up == false && tiltEncoder.getRate() < (-tiltSpeed - buffer)){
+      tiltMotor.set( (tiltMotor.get() + .05));
+      return;
     }
 
 
-
   }
+
+
 
   // -------------------------------------------------------------
   //  dial around one ball at a time.
@@ -304,7 +407,7 @@ public class Robot extends TimedRobot {
     shooterWheel1.set(.5);
     shooterWheel2.set(-.5) ;
   }
-  public void run_shooter_wheels_for_shooting_out() {
+  public void run_shooter_wheels_for_shooting_out_high() {
     shooterWheel1.set(-1);
     shooterWheel2.set(1) ;
   }
@@ -331,28 +434,28 @@ public class Robot extends TimedRobot {
     intakeControl = Shuffleboard.getTab("controls")
     .add("intake in",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(5, 1)
+    .withPosition(6, 1)
     .withSize(3, 2)
     .getEntry();
 
     shooterControl = Shuffleboard.getTab("controls")
     .add("shoot out",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(5, 3)
+    .withPosition(6, 3)
     .withSize(3, 2)
     .getEntry();
 
     shooterControlLow = Shuffleboard.getTab("controls")
     .add("shoot out LOW",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(5, 5)
+    .withPosition(6, 5)
     .withSize(3, 2)
     .getEntry();
 
     dialNotchControl = Shuffleboard.getTab("controls")
     .add("move-dial",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(5, 7)
+    .withPosition(6, 7)
     .withSize(3, 2)
     .getEntry();
 
@@ -377,12 +480,48 @@ public class Robot extends TimedRobot {
     .withSize(3, 2)
     .getEntry();
 
+    getKp = Shuffleboard.getTab("PID")
+    .add("Kp",5)
+    .withPosition(10, 1)
+    .withSize(3, 2)
+    .getEntry();
+
+    getKi = Shuffleboard.getTab("PID")
+    .add("Ki",.02)
+    .withPosition(10, 3)
+    .withSize(3, 2)
+    .getEntry();
 
     }
 
   // -------------------------------------------------------------
   // -------------------------------------------------------------
+  public void normal_driving() {
+    double throttle = (1 - joystick.getThrottle()) /  2.0 ;
+    double turn_throttle = throttle + .2 ;
+    // we should repace this with some math.... :-)
+    if (throttle > .9) { throttle = .95 ;}
+    else if (throttle > .8) { throttle = .89 ;}
+    else if (throttle > .7) { throttle = .83 ;}
+    else if (throttle > .6) { throttle = .77 ;}
+    else if (throttle > .5) { throttle = .72 ;}
+    else if (throttle > .4) { throttle = .66 ;}
+    else if (throttle > .3) { throttle = .6 ;}
+    else if (throttle > .2) { throttle = .54 ;}
+    else if (throttle > .1) { throttle = .49 ;}
+    else if (throttle > 0) { throttle = .43 ;}
+    else { throttle= 0; }
 
+    double joyy = joystick.getY();
+    double joyz = joystick.getZ();
+    if (  Math.abs(joyy) < .03) { joyy = 0 ;} // deadzone.
+    if (  Math.abs(joyz) < .03) { joyz = 0 ;} // deadzone.
+    drive.arcadeDrive(joyy * throttle , joyz * turn_throttle );
+  }
+
+// -------------------------------------------------------------
+// -------------------------------------------------------------
+// -------------------------------------------------------------
 
 
 }
