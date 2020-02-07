@@ -47,8 +47,7 @@ public class Robot extends TimedRobot {
   private String m_autoSelected;
   private final SendableChooser<String> m_chooser = new SendableChooser<>();
 
-  double Kp = 5 ; double Ki = .02 ; double Kd = 2 ;
-  PIDController pid ;
+
 
 
   // MOTORS:
@@ -158,14 +157,6 @@ public class Robot extends TimedRobot {
       tiltEncoder.reset();
       dialEncoder.reset() ;
 
-      Kp = getKp.getDouble(0) ;
-      Ki = getKi.getDouble(0);
-      SmartDashboard.putNumber("KP", Kp) ;
-      SmartDashboard.putNumber("KI", Ki);
-      pid = new PIDController(Kp, Ki, Kd);
-      pid.setTolerance(5,10);
-
-
     m_autoSelected = m_chooser.getSelected();
     // m_autoSelected = SmartDashboard.getString("Auto Selector", kDefaultAuto);
     System.out.println("Auto selected: " + m_autoSelected);
@@ -177,13 +168,6 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void autonomousPeriodic() {
-
-      double answer = pid.calculate(tiltEncoder.getDistance(), 200);
-      answer = answer / 10000 + .25;
-      SmartDashboard.putNumber("answer", answer);
-      SmartDashboard.putBoolean("at setpoint", pid.atSetpoint()) ;
-      tiltMotor.set(answer) ;
-
 
     switch (m_autoSelected) {
       case kCustomAuto:
@@ -255,13 +239,8 @@ public class Robot extends TimedRobot {
     } else if (tiltHighControl.getBoolean(false)) {
       tiltGoal = "high" ;
       tiltHighControl.setBoolean(false) ;
-    } else {
-      //tiltGoal = "" ;
-    }
-    //do_tilting();
-
-
-
+    } 
+    do_tilting();
 
 
   }
@@ -269,11 +248,6 @@ public class Robot extends TimedRobot {
   // -------------------------------------------------------------
   // TILT CONTROL
   public void do_tilting() {
-    if (tiltGoal == "") { 
-      //tiltMotor.set(0) ;
-      return ;
-    }
-
 
     double height = tiltEncoder.getDistance();
     double low_goal = 250 ;
@@ -286,89 +260,42 @@ public class Robot extends TimedRobot {
         tiltMotor.set(0);
         return ;
       }
-      // means the speed is above 25.  slowly lower it.
-      double newLowerSpeed = tiltMotor.get() - .005 ;
-      if (newLowerSpeed < 0) { tiltMotor.set(0); return ;} // shouldn't ever happen. :-()
-      System.out.println("do_tilting, floor: lowering motor from " + tiltMotor.get() + " TO " + newLowerSpeed + ".");
-      tiltMotor.set(newLowerSpeed);
+      // means the speed is above 25.  lower it.
+      tiltMotor.set(-.2);
       return ;
     }
 
 
     if (tiltGoal == "low") {
-      if ( (low_goal - height) > 100) {
-        tiltMotor.set(.35);
+      if (  Math.abs( low_goal - height) < 30) {
+        tiltMotor.set(0);
         return ;
       }
-      if ( (low_goal - height) > 50) {
-        tiltMotor.set(2.5) ;
+      if ( height < low_goal) {
+        tiltMotor.set(.3) ;
         return ;
       }
-      tilthold(height,low_goal) ;
-      return ;
+      if ( height > low_goal) {
+        tiltMotor.set(-.2);
+        return ;
+      }
     }
     
     if (tiltGoal == "high") {
-      if (Math.abs( high_goal - height) < 20) {
+      if (  Math.abs( high_goal - height) < 30) {
+        tiltMotor.set(0);
         return ;
       }
-      if (height < high_goal) {
-        if (tiltMotor.get() == 0) {
-          tiltMotor.set(.2);
-        } else {
-          tiltMotor.set( tiltMotor.get() + .02) ;
-        }
+      if ( height < high_goal) {
+        tiltMotor.set(.3) ;
         return ;
       }
-      if (height > high_goal) {
-        tiltMotor.set( tiltMotor.get() - .02) ;
+      if ( height > high_goal) {
+        tiltMotor.set(-.2);
         return ;
       }
     }
   }
-  
-  public void tilthold(double height, double goal) {
-    if (height < goal && tiltEncoder.getRate() < 0){
-        tiltMotor.set( tiltMotor.get() + .005) ;
-        return;
-    }
-    if (height > goal && tiltEncoder.getRate() > 0) {
-        tiltMotor.set( tiltMotor.get() - .005) ;
-    }
-  }
-
-  public void DoTilt(boolean up) {
-    // max speed = 100.  slow it down if it's faster than that.
-    // try to move tilt up/down at $tiltSpeed ; (set at top)
-
-    
-    double buffer = 5 ;
-    // going up? and speed too slow?
-    if (up == true && tiltEncoder.getRate() < (tiltSpeed - buffer)) {
-      tiltMotor.set( (tiltMotor.get() + .05));
-      return;
-    } 
-    // going up, but going too fast...
-    if (up == true && tiltEncoder.getRate() > (tiltSpeed + buffer)){
-      tiltMotor.set( (tiltMotor.get() - .05));
-      return;
-    }
-
-    // going down, going too slow.
-    if (up == false && tiltEncoder.getRate() > (-tiltSpeed + buffer)){
-      tiltMotor.set( (tiltMotor.get() - .05));
-      return;
-    }
-
-    // going down too fast.
-    if (up == false && tiltEncoder.getRate() < (-tiltSpeed - buffer)){
-      tiltMotor.set( (tiltMotor.get() + .05));
-      return;
-    }
-
-
-  }
-
 
 
   // -------------------------------------------------------------
