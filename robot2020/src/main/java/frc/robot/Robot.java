@@ -83,6 +83,7 @@ public class Robot extends TimedRobot {
   boolean dial_is_moving_one_notch = false ;
   AnalogInput beam1 = new AnalogInput(0) ;
   AnalogInput beam2 = new AnalogInput(1) ;
+  boolean dial_by_sensor_is_on =false ;
 
   // TILT:
   String tiltGoal = "floor" ;
@@ -98,8 +99,7 @@ public class Robot extends TimedRobot {
   private NetworkTableEntry tiltLowControl ;
   private NetworkTableEntry tiltHighControl ;
 
-  private NetworkTableEntry getKp ;
-  private NetworkTableEntry getKi ;
+  private NetworkTableEntry beamIntakeControl ;
 
 
   @Override
@@ -227,6 +227,13 @@ public class Robot extends TimedRobot {
       dialNotchControl.setBoolean(false) ;
     }
     dial_intake_turning();
+    if (beamIntakeControl.getBoolean(false)) {
+      dial_by_sensor_is_on = true ;
+      dial_by_sensor() ;
+    } else if (dial_by_sensor_is_on == true) {
+      dial_by_sensor_is_on = false ;
+      dialMotor.set(0) ;
+    }
 
 
     // TILTING:
@@ -251,7 +258,7 @@ public class Robot extends TimedRobot {
 
     double height = tiltEncoder.getDistance();
     double low_goal = 250 ;
-    double high_goal = 300 ;
+    double high_goal = 400 ;
 
     if (tiltGoal == "floor"){
       if (height < 25 && tiltMotor.get() == 0) { return ;}
@@ -261,7 +268,7 @@ public class Robot extends TimedRobot {
         return ;
       }
       // means the speed is above 25.  lower it.
-      tiltMotor.set(-.2);
+      tiltMotor.set(-.6);
       return ;
     }
 
@@ -272,11 +279,11 @@ public class Robot extends TimedRobot {
         return ;
       }
       if ( height < low_goal) {
-        tiltMotor.set(.3) ;
+        tiltMotor.set(.7) ;
         return ;
       }
       if ( height > low_goal) {
-        tiltMotor.set(-.2);
+        tiltMotor.set(-.6);
         return ;
       }
     }
@@ -287,11 +294,11 @@ public class Robot extends TimedRobot {
         return ;
       }
       if ( height < high_goal) {
-        tiltMotor.set(.3) ;
+        tiltMotor.set(.7) ;
         return ;
       }
       if ( height > high_goal) {
-        tiltMotor.set(-.2);
+        tiltMotor.set(-.6);
         return ;
       }
     }
@@ -323,6 +330,20 @@ public class Robot extends TimedRobot {
       // nothing to do here.. 
     }
   }
+  // -------------------------------------------------------------
+  public void dial_by_sensor() {
+      // when a ball breaks beam 1, turn until both beam 1 and beam 2 are not broken.
+    if ( beam1.getAverageVoltage() < .1) {
+      dialMotor.set(.6) ;
+      return;
+    }
+    if (beam1.getAverageVoltage() > .1 && beam2.getAverageVoltage() > .1){
+      dialMotor.set(0);
+    }
+
+  }
+
+
 
   // -------------------------------------------------------------
   // shooter wheel controls:
@@ -339,8 +360,8 @@ public class Robot extends TimedRobot {
     shooterWheel2.set(1) ;
   }
   public void run_shooter_wheels_for_shooting_out_low() {
-    shooterWheel1.set(-.6);
-    shooterWheel2.set(.6) ;
+    shooterWheel1.set(-.3);
+    shooterWheel2.set(.3) ;
   }
   // -------------------------------------------------------------
   // -------------------------------------------------------------
@@ -366,21 +387,21 @@ public class Robot extends TimedRobot {
     .getEntry();
 
     shooterControl = Shuffleboard.getTab("controls")
-    .add("shoot out",false)
+    .add("shooter wheels out fast",false)
     .withWidget(BuiltInWidgets.kToggleButton)
     .withPosition(6, 3)
     .withSize(3, 2)
     .getEntry();
 
     shooterControlLow = Shuffleboard.getTab("controls")
-    .add("shoot out LOW",false)
+    .add("shooter wheels out LOW",false)
     .withWidget(BuiltInWidgets.kToggleButton)
     .withPosition(6, 5)
     .withSize(3, 2)
     .getEntry();
 
     dialNotchControl = Shuffleboard.getTab("controls")
-    .add("move-dial",false)
+    .add("move-dial one click",false)
     .withWidget(BuiltInWidgets.kToggleButton)
     .withPosition(6, 7)
     .withSize(3, 2)
@@ -407,17 +428,14 @@ public class Robot extends TimedRobot {
     .withSize(3, 2)
     .getEntry();
 
-    getKp = Shuffleboard.getTab("PID")
-    .add("Kp",5)
-    .withPosition(10, 1)
+    beamIntakeControl = Shuffleboard.getTab("controls")
+    .add("BEAM intake",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(15, 1)
     .withSize(3, 2)
     .getEntry();
 
-    getKi = Shuffleboard.getTab("PID")
-    .add("Ki",.02)
-    .withPosition(10, 3)
-    .withSize(3, 2)
-    .getEntry();
+    
 
     }
 
