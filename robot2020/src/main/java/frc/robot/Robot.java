@@ -76,6 +76,9 @@ public class Robot extends TimedRobot {
   double throttle; 
   double turn_throttle;
   DifferentialDrive drive ;
+  boolean intake_mode_on = false ;
+  boolean low_dump_mode_on = false ;
+
 
   /// DIAL
   boolean move_dial_one_notch = false ;
@@ -87,7 +90,7 @@ public class Robot extends TimedRobot {
 
   // TILT:
   String tiltGoal = "floor" ;
-  double tiltSpeed = 100 ;
+  String current_tilt_location = "" ;
 
   //network tables:
   private NetworkTableEntry intakeControl;
@@ -100,6 +103,8 @@ public class Robot extends TimedRobot {
   private NetworkTableEntry tiltHighControl ;
 
   private NetworkTableEntry beamIntakeControl ;
+  private NetworkTableEntry allIntakeControl ;
+  private NetworkTableEntry lowDumpControl ;
 
 
   @Override
@@ -201,13 +206,73 @@ public class Robot extends TimedRobot {
 
   // -------------------------------------------------------------
   // -------------------------------------------------------------
+  public void intake_rollers_on() {
+    intakeMotor.set(.4) ;
+  }
+  public void intake_rollers_off() {
+    intakeMotor.set(0) ;
+  }
   // -------------------------------------------------------------
+  public void run_all_intake() {
+    tiltGoal = "floor" ;
+    do_tilting();
+    intake_rollers_on() ;
+    run_shooter_wheels_for_intake() ;
+    dial_by_sensor() ;
+    return ;
+  }
+  public void stop_all_intake() {
+    intake_rollers_off();
+    stop_shooter_wheels();
+    dialMotor.set(0);
+    return ;
+  }
+  public void do_low_dump() {
+    tiltGoal = "low" ;
+    do_tilting();
+    if (current_tilt_location != "low") { return ;} // wait until tilt is correct.
+    // tilt is now OK, fire.
+    run_shooter_wheels_for_shooting_out_low() ;
+    dialMotor.set(-1) ;
+  }
+  public void stop_low_dump () {
+    dialMotor.set(0);
+    stop_shooter_wheels();
+  }
+
+
+
 
   /**
    * This function is called periodically during test mode.
    */
   @Override
   public void testPeriodic() {
+
+    // SET everything for intake:
+    if (allIntakeControl.getBoolean(false) ) {
+      intake_mode_on = true ;
+      run_all_intake() ;
+      return ;
+    } else if (intake_mode_on == true) {
+      intake_mode_on = false ;
+      stop_all_intake() ;
+      return ;
+    }
+
+
+    // do all stuff for LOW dump.
+    if (lowDumpControl.getBoolean(false)) {
+      low_dump_mode_on = true ;
+      do_low_dump() ;
+      return ;
+    } else if (low_dump_mode_on == true) {
+      low_dump_mode_on = false ;
+      stop_low_dump() ;
+      return ;
+    }
+
+
 
     // SHOOTER WHEELS
     if (intakeControl.getBoolean(false)){
@@ -260,11 +325,17 @@ public class Robot extends TimedRobot {
     double low_goal = 250 ;
     double high_goal = 400 ;
 
+    current_tilt_location = "";
+
     if (tiltGoal == "floor"){
-      if (height < 25 && tiltMotor.get() == 0) { return ;}
+      if (height < 25 && tiltMotor.get() == 0) { 
+        current_tilt_location = "floor" ;
+        return ;
+      }
       if (height < 25) {
         System.out.println("do_tilting, to floor: current tilt height: " + height + ", setting to zero.") ;
         tiltMotor.set(0);
+        current_tilt_location = "floor" ;
         return ;
       }
       // means the speed is above 25.  lower it.
@@ -275,6 +346,7 @@ public class Robot extends TimedRobot {
 
     if (tiltGoal == "low") {
       if (  Math.abs( low_goal - height) < 30) {
+        current_tilt_location = "low";
         tiltMotor.set(0);
         return ;
       }
@@ -290,6 +362,7 @@ public class Robot extends TimedRobot {
     
     if (tiltGoal == "high") {
       if (  Math.abs( high_goal - height) < 30) {
+        current_tilt_location = "high";
         tiltMotor.set(0);
         return ;
       }
@@ -435,7 +508,20 @@ public class Robot extends TimedRobot {
     .withSize(3, 2)
     .getEntry();
 
-    
+    allIntakeControl = Shuffleboard.getTab("controls")
+    .add("ALL intake mechanisms",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(15, 3)
+    .withSize(3, 2)
+    .getEntry();
+
+    lowDumpControl = Shuffleboard.getTab("controls")
+    .add("Dump Low",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(15, 5)
+    .withSize(3, 2)
+    .getEntry();
+
 
     }
 
