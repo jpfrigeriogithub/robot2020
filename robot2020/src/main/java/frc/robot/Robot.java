@@ -1,4 +1,4 @@
-/*----------------------------------------------------------------------------*/
+ /*----------------------------------------------------------------------------*/
 /* Copyright (c) 2017-2018 FIRST. All Rights Reserved.                        */
 /* Open Source Software - may be modified and shared by FRC teams. The code   */
 /* must be accompanied by the FIRST BSD license file in the root directory of */
@@ -60,24 +60,27 @@ public class Robot extends TimedRobot {
   WPI_VictorSPX rightDriveFollow ;
   WPI_VictorSPX dialMotor ;
   WPI_VictorSPX intakeMotor;
-  
+  WPI_VictorSPX wheelSpinnerMotor ;
+  WPI_VictorSPX wheelElevatorMotor ;
+  CANSparkMax winchMotor ;
 
   // CONTROLLERS:
-  XboxController xbox = new XboxController(0);
-  Joystick joystick = new Joystick(1);
+  XboxController xbox = new XboxController(1);
+  Joystick joystick = new Joystick(0);
 
 
   // ENCODERS:
   Encoder dialEncoder ;
   Encoder tiltEncoder ;
+  Encoder wheelElevatorEncoder ;
 
   // global'ish Variables used in routines below:
   Timer myClock = new Timer();
   double throttle; 
   double turn_throttle;
   DifferentialDrive drive ;
-  boolean intake_mode_on = false ;
-  boolean low_dump_mode_on = false ;
+  boolean tab_intake_mode_on = false ;
+  boolean tab_low_dump_mode_on = false ;
 
 
   /// DIAL
@@ -87,9 +90,14 @@ public class Robot extends TimedRobot {
   AnalogInput beam1 = new AnalogInput(0) ;
   AnalogInput beam2 = new AnalogInput(1) ;
   boolean dial_by_sensor_is_on =false ;
+  boolean tab_spinDialOut = false ;
+
+  // color wheel
+  String wheelHeightGoal = "down" ;
+  String current_wheel_height = "" ;
 
   // TILT:
-  String tiltGoal = "floor" ;
+  String tiltGoal = "high" ;
   String current_tilt_location = "" ;
 
   //network tables:
@@ -105,7 +113,12 @@ public class Robot extends TimedRobot {
   private NetworkTableEntry beamIntakeControl ;
   private NetworkTableEntry allIntakeControl ;
   private NetworkTableEntry lowDumpControl ;
-
+  private NetworkTableEntry spinDialOutControl ;
+ 
+  private NetworkTableEntry colorWheelSpinControl ;
+  private NetworkTableEntry colorWheelElevatorDownControl; 
+  private NetworkTableEntry colorWheelElevatorUpControl ;
+  private NetworkTableEntry colorWheelElevatorAtWheelControl;
 
   @Override
   public void robotInit() {
@@ -121,19 +134,24 @@ public class Robot extends TimedRobot {
     // motors:
     shooterWheel1 = new CANSparkMax(10, MotorType.kBrushless);
     shooterWheel2 = new CANSparkMax(11, MotorType.kBrushless);
-    talonLeftDrive = new WPI_TalonSRX(1);
-    talonRightDrive = new WPI_TalonSRX(2);
+    talonLeftDrive = new WPI_TalonSRX(2);
+    talonRightDrive = new WPI_TalonSRX(1);
     leftDriveFollow = new WPI_VictorSPX(25);
     rightDriveFollow = new WPI_VictorSPX(24);
     dialMotor = new WPI_VictorSPX(21);
     tiltMotor = new WPI_VictorSPX(22);
     intakeMotor = new WPI_VictorSPX(23);
 
+    wheelElevatorMotor = new WPI_VictorSPX(20);
+    wheelSpinnerMotor = new WPI_VictorSPX(26);
+    winchMotor = new CANSparkMax(12,MotorType.kBrushless) ;
+
     setupTestButtons() ; // test mode buttons on shuffleboard.
 
     // encoders:
     tiltEncoder = new Encoder (0,1);
     dialEncoder = new Encoder (2,3) ;
+    wheelElevatorEncoder = new Encoder (4,5) ;
 
     // driving:
     talonLeftDrive.configFactoryDefault() ;
@@ -161,6 +179,7 @@ public class Robot extends TimedRobot {
   public void autonomousInit() {
       tiltEncoder.reset();
       dialEncoder.reset() ;
+      wheelElevatorEncoder.reset();
 
     m_autoSelected = m_chooser.getSelected();
     // m_autoSelected = SmartDashboard.getString("Auto Selector", kDefaultAuto);
@@ -199,6 +218,7 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void teleopPeriodic() {
+    controlTabStuff() ;
     normal_driving();
     // more stuff here.
 
@@ -227,6 +247,7 @@ public class Robot extends TimedRobot {
     dialMotor.set(0);
     return ;
   }
+  // ----------------------------------------
   public void do_low_dump() {
     tiltGoal = "low" ;
     do_tilting();
@@ -239,39 +260,119 @@ public class Robot extends TimedRobot {
     dialMotor.set(0);
     stop_shooter_wheels();
   }
+  
+  // --------------------------------------
+  public void do_wheel_height() {
+    double wheel_up_goal = 800 ;
+    double wheel_atwheel_goal = 750 ;
+    double wheelHeight = wheelElevatorEncoder.getDistance() ;
+
+    current_wheel_height = "" ;
+
+    if (wheelHeightGoal == "down") {
+      if (wheelHeight < 10) {
+        current_wheel_height = "down" ;
+        wheelElevatorMotor.set(0) ;
+        return ;
+      }
+      wheelElevatorMotor.set(.8);
+      return ;
+    }
+
+    if (wheelHeightGoal == "up") {
+      if ( wheelHeight > (wheel_up_goal - 15) ) {
+        current_wheel_height = "up";
+        wheelElevatorMotor.set(0) ;
+        return;
+      }
+      wheelElevatorMotor.set(-.8) ;
+      return ;
+    }
+
+    if (wheelHeightGoal == "atwheel") {
+      if ( (Math.abs(wheelHeight - wheel_atwheel_goal)) < 15) {
+        current_wheel_height = "atwheel" ;
+        wheelElevatorMotor.set(0) ;
+        return ;
+      }
+      if (wheelHeight > wheel_atwheel_goal) {
+        wheelElevatorMotor.set(.5) ;
+        return ;
+      }
+      if (wheelHeight < wheel_atwheel_goal) {
+        wheelElevatorMotor.set(-.7) ;
+      }
+    }
 
 
 
 
-  /**
-   * This function is called periodically during test mode.
-   */
-  @Override
-  public void testPeriodic() {
+  }
+  
+  // --------------------------------------
 
-    // SET everything for intake:
+
+  public void controlTabStuff() {
+
+    if (colorWheelSpinControl.getBoolean(false)) {
+      wheelSpinnerMotor.set(.7) ;
+    } else {
+      wheelSpinnerMotor.set(0) ;
+    }
+
+    // color wheel elevator.
+    if (colorWheelElevatorDownControl.getBoolean(false)){
+      wheelHeightGoal = "down" ;
+      colorWheelElevatorDownControl.setBoolean(false) ;
+    } else if (colorWheelElevatorUpControl.getBoolean(false)){
+      wheelHeightGoal = "up" ;
+      colorWheelElevatorUpControl.setBoolean(false) ;
+    } else if (colorWheelElevatorAtWheelControl.getBoolean(false)){
+      wheelHeightGoal = "atwheel" ;
+      colorWheelElevatorAtWheelControl.setBoolean(false) ;
+    } 
+    do_wheel_height() ;
+
+
+
+    // INTAKE MODE:
     if (allIntakeControl.getBoolean(false) ) {
-      intake_mode_on = true ;
+      tab_intake_mode_on = true ;
       run_all_intake() ;
       return ;
-    } else if (intake_mode_on == true) {
-      intake_mode_on = false ;
+    } else if (tab_intake_mode_on == true) {
+      tab_intake_mode_on = false ;
       stop_all_intake() ;
       return ;
     }
 
 
+    // spin the dial OUT:
+    if (spinDialOutControl.getBoolean(false) 
+        && tab_intake_mode_on == false  
+        && move_dial_one_notch == false
+        && Math.abs(dialMotor.get()) < .05
+        ) {
+          tab_spinDialOut = true ;
+          dialMotor.set(-1) ;
+          return ;
+    } else if (tab_spinDialOut == true){
+      tab_spinDialOut = false ;
+      dialMotor.set(0) ;
+      return;
+    }
+
+
     // do all stuff for LOW dump.
     if (lowDumpControl.getBoolean(false)) {
-      low_dump_mode_on = true ;
+      tab_low_dump_mode_on = true ;
       do_low_dump() ;
       return ;
-    } else if (low_dump_mode_on == true) {
-      low_dump_mode_on = false ;
+    } else if (tab_low_dump_mode_on == true) {
+      tab_low_dump_mode_on = false ;
       stop_low_dump() ;
       return ;
     }
-
 
 
     // SHOOTER WHEELS
@@ -286,12 +387,15 @@ public class Robot extends TimedRobot {
     }
 
 
-    // DIAL 
+    // DIAL by increments: 
     if (dialNotchControl.getBoolean(false))  {
       move_dial_one_notch = true ;
       dialNotchControl.setBoolean(false) ;
     }
-    dial_intake_turning();
+    dial_intake_turning_by_degrees();
+
+    // DIAL by beam control:
+    /*  if I want to run JUST the beams and dial:
     if (beamIntakeControl.getBoolean(false)) {
       dial_by_sensor_is_on = true ;
       dial_by_sensor() ;
@@ -299,6 +403,7 @@ public class Robot extends TimedRobot {
       dial_by_sensor_is_on = false ;
       dialMotor.set(0) ;
     }
+    */
 
 
     // TILTING:
@@ -315,63 +420,74 @@ public class Robot extends TimedRobot {
     do_tilting();
 
 
+    // Color Wheel
+
+  }
+
+
+  /**
+   * This function is called periodically during test mode.
+   */
+  @Override
+  public void testPeriodic() {
+
+    //controlTabStuff();
+
   }
   // -------------------------------------------------------------
   // -------------------------------------------------------------
   // TILT CONTROL
   public void do_tilting() {
 
-    double height = tiltEncoder.getDistance();
-    double low_goal = 250 ;
-    double high_goal = 400 ;
+    double tiltPosition = tiltEncoder.getDistance();
+    // Robot starts HIGH, at 0.  increase to get to low, increase more to get to floor.
+    double low_goal = 150 ;
+    double floor_goal = 400 ;
 
     current_tilt_location = "";
 
-    if (tiltGoal == "floor"){
-      if (height < 25 && tiltMotor.get() == 0) { 
-        current_tilt_location = "floor" ;
-        return ;
-      }
-      if (height < 25) {
-        System.out.println("do_tilting, to floor: current tilt height: " + height + ", setting to zero.") ;
+    if (tiltGoal == "high"){
+      if (tiltPosition < 30)  {
+        // then we are AT high.  so stop doing anything.
+        current_tilt_location = "high" ;
         tiltMotor.set(0);
-        current_tilt_location = "floor" ;
         return ;
       }
-      // means the speed is above 25.  lower it.
-      tiltMotor.set(-.6);
+      // need to raise it to get to high
+      tiltMotor.set(-.7);
       return ;
     }
 
-
     if (tiltGoal == "low") {
-      if (  Math.abs( low_goal - height) < 30) {
+      if (  Math.abs( low_goal - tiltPosition) < 30) {
         current_tilt_location = "low";
         tiltMotor.set(0);
         return ;
       }
-      if ( height < low_goal) {
-        tiltMotor.set(.7) ;
+      // it's too low, raise it up:
+      if ( tiltPosition < low_goal) {
+        tiltMotor.set(.6) ;
         return ;
       }
-      if ( height > low_goal) {
-        tiltMotor.set(-.6);
+      if ( tiltPosition > low_goal) {
+        tiltMotor.set(-.7);
         return ;
       }
     }
     
-    if (tiltGoal == "high") {
-      if (  Math.abs( high_goal - height) < 30) {
-        current_tilt_location = "high";
+
+    if (tiltGoal == "floor") {
+      if (  Math.abs( floor_goal - tiltPosition) < 30) {
+        current_tilt_location = "floor";
         tiltMotor.set(0);
         return ;
       }
-      if ( height < high_goal) {
-        tiltMotor.set(.7) ;
+      if ( tiltPosition < floor_goal) {
+        tiltMotor.set(.6) ;
         return ;
       }
-      if ( height > high_goal) {
-        tiltMotor.set(-.6);
+      if ( tiltPosition > floor_goal) {
+        tiltMotor.set(-.7);
         return ;
       }
     }
@@ -380,7 +496,7 @@ public class Robot extends TimedRobot {
 
   // -------------------------------------------------------------
   //  dial around one ball at a time.
-  public void dial_intake_turning() {
+  public void dial_intake_turning_by_degrees() {
     if (move_dial_one_notch == true) {
       dial_notch_begin_encoder_value = dialEncoder.getDistance();
       dial_is_moving_one_notch = true ;
@@ -403,6 +519,7 @@ public class Robot extends TimedRobot {
       // nothing to do here.. 
     }
   }
+
   // -------------------------------------------------------------
   public void dial_by_sensor() {
       // when a ball breaks beam 1, turn until both beam 1 and beam 2 are not broken.
@@ -447,79 +564,117 @@ public class Robot extends TimedRobot {
     SmartDashboard.putNumber("DIAL:",dialEncoder.getDistance());
     SmartDashboard.putNumber("beam-1:", beam1.getAverageVoltage()) ;
     SmartDashboard.putNumber("beam-2:", beam2.getAverageVoltage()) ;
+    SmartDashboard.putNumber("color-wheel-elevator:", wheelElevatorEncoder.getDistance());
 
   }
 
   // -------------------------------------------------------------
   public void setupTestButtons() {
     intakeControl = Shuffleboard.getTab("controls")
-    .add("intake in",false)
+    .add("spin intake roller IN",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(6, 1)
-    .withSize(3, 2)
+    .withPosition(1, 0)
+    .withSize(3, 1)
     .getEntry();
 
     shooterControl = Shuffleboard.getTab("controls")
     .add("shooter wheels out fast",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(6, 3)
-    .withSize(3, 2)
+    .withPosition(1, 2)
+    .withSize(3, 1)
     .getEntry();
 
     shooterControlLow = Shuffleboard.getTab("controls")
     .add("shooter wheels out LOW",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(6, 5)
-    .withSize(3, 2)
+    .withPosition(1, 4)
+    .withSize(3, 1)
     .getEntry();
 
     dialNotchControl = Shuffleboard.getTab("controls")
     .add("move-dial one click",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(6, 7)
-    .withSize(3, 2)
+    .withPosition(1, 6)
+    .withSize(3, 1)
     .getEntry();
 
     tiltFloorControl = Shuffleboard.getTab("controls")
     .add("tilt-to-floor",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(10, 1)
-    .withSize(3, 2)
+    .withPosition(4, 0)
+    .withSize(3, 1)
     .getEntry();
 
     tiltLowControl = Shuffleboard.getTab("controls")
     .add("tilt-LOW",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(10, 3)
-    .withSize(3, 2)
+    .withPosition(4, 2)
+    .withSize(3, 1)
     .getEntry();
 
     tiltHighControl = Shuffleboard.getTab("controls")
     .add("tilt-HIGH",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(10, 5)
-    .withSize(3, 2)
+    .withPosition(4, 4)
+    .withSize(3, 1)
     .getEntry();
 
+
+    /*
     beamIntakeControl = Shuffleboard.getTab("controls")
     .add("BEAM intake",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(15, 1)
-    .withSize(3, 2)
-    .getEntry();
+    .withPosition(7, 0)
+    .withSize(3, 1)
+    .getEntry(); */
 
     allIntakeControl = Shuffleboard.getTab("controls")
     .add("ALL intake mechanisms",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(15, 3)
-    .withSize(3, 2)
+    .withPosition(7, 0)
+    .withSize(3, 1)
     .getEntry();
 
     lowDumpControl = Shuffleboard.getTab("controls")
     .add("Dump Low",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(15, 5)
-    .withSize(3, 2)
+    .withPosition(7, 2)
+    .withSize(3, 1)
+    .getEntry();
+
+    spinDialOutControl = Shuffleboard.getTab("controls")
+    .add("Spin dial OUT",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(7, 4)
+    .withSize(3, 1)
+    .getEntry();
+
+    colorWheelSpinControl = Shuffleboard.getTab("controls")
+    .add("Spin color wheel",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(10, 0)
+    .withSize(3, 1)
+    .getEntry();
+
+    colorWheelElevatorDownControl = Shuffleboard.getTab("controls")
+    .add("Wheel elevator DOWN",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(10, 2)
+    .withSize(3, 1)
+    .getEntry();
+
+    colorWheelElevatorUpControl = Shuffleboard.getTab("controls")
+    .add("Wheel elevator UP",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(10, 4)
+    .withSize(3, 1)
+    .getEntry();
+
+    colorWheelElevatorAtWheelControl = Shuffleboard.getTab("controls")
+    .add("Wheel elevator AT COLOR WHEEL",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(10, 6)
+    .withSize(3, 1)
     .getEntry();
 
 
@@ -547,7 +702,7 @@ public class Robot extends TimedRobot {
     double joyz = joystick.getZ();
     if (  Math.abs(joyy) < .03) { joyy = 0 ;} // deadzone.
     if (  Math.abs(joyz) < .03) { joyz = 0 ;} // deadzone.
-    drive.arcadeDrive(joyy * throttle , joyz * turn_throttle );
+    drive.arcadeDrive(-joyy * throttle , joyz * turn_throttle );
   }
 
 // -------------------------------------------------------------
