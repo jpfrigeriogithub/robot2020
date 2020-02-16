@@ -15,6 +15,8 @@ import edu.wpi.first.wpilibj.shuffleboard.Shuffleboard;
 import edu.wpi.first.wpilibj.shuffleboard.ShuffleboardLayout;
 import edu.wpi.first.wpilibj.shuffleboard.ShuffleboardTab;
 import edu.wpi.first.networktables.NetworkTableEntry;
+import edu.wpi.first.networktables.NetworkTableInstance;
+import edu.wpi.first.networktables.*;
 import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -28,6 +30,9 @@ import edu.wpi.first.wpilibj.Victor;
 import edu.wpi.first.wpilibj.Timer;
 import com.ctre.phoenix.motorcontrol.can.* ;
 import edu.wpi.first.wpilibj.AnalogInput ;
+import edu.wpi.first.wpilibj.livewindow.*;
+import edu.wpi.first.cameraserver.CameraServer;
+import edu.wpi.cscore.UsbCamera;
 import java.util.Map;
 import edu.wpi.first.wpilibj.controller.*;
 import javax.print.attribute.standard.JobPrioritySupported;
@@ -47,8 +52,11 @@ public class Robot extends TimedRobot {
   private String m_autoSelected;
   private final SendableChooser<String> m_chooser = new SendableChooser<>();
 
-
-
+  
+  boolean targeting = false;
+  UsbCamera camera;
+  NetworkTableEntry camstream;
+  boolean limelight_target_button = false;
 
   // MOTORS:
   CANSparkMax shooterWheel1;
@@ -120,9 +128,25 @@ public class Robot extends TimedRobot {
   private NetworkTableEntry colorWheelElevatorUpControl ;
   private NetworkTableEntry colorWheelElevatorAtWheelControl;
 
+  private NetworkTableEntry winchLeftControl ;
+  private NetworkTableEntry winchRightControl;
+
+  NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
+  NetworkTableEntry tx = table.getEntry("tx");
+  NetworkTableEntry ty = table.getEntry("ty");
+  NetworkTableEntry ta = table.getEntry("ta");
+
+  
   @Override
   public void robotInit() {
     myClock.start();
+    myClock.reset();
+    table.getEntry("pipeline").setNumber(0);
+    CameraServer.getInstance().startAutomaticCapture("Camera", 0);
+
+    NetworkTableInstance inst = NetworkTableInstance.getDefault();
+    NetworkTable CamPub = inst.getTable("CameraPublisher");
+    camstream = CamPub.getEntry("camera_stream");
 
     // define autonomous options:
     m_chooser.setDefaultOption("Default Auto", kDefaultAuto);
@@ -132,8 +156,8 @@ public class Robot extends TimedRobot {
 
 
     // motors:
-    shooterWheel1 = new CANSparkMax(10, MotorType.kBrushless);
-    shooterWheel2 = new CANSparkMax(11, MotorType.kBrushless);
+    shooterWheel1 = new CANSparkMax(11, MotorType.kBrushless);
+    shooterWheel2 = new CANSparkMax(10, MotorType.kBrushless);
     talonLeftDrive = new WPI_TalonSRX(2);
     talonRightDrive = new WPI_TalonSRX(1);
     leftDriveFollow = new WPI_VictorSPX(25);
@@ -163,6 +187,7 @@ public class Robot extends TimedRobot {
     drive = new DifferentialDrive(talonLeftDrive,talonRightDrive);
 
     
+    table.getEntry("ledMode").setNumber(1);
 
 
   }
@@ -213,6 +238,9 @@ public class Robot extends TimedRobot {
 
   }
 
+  @Override
+  public void teleopInit() {
+  }
   /**
    * This function is called periodically during operator control.
    */
@@ -220,6 +248,8 @@ public class Robot extends TimedRobot {
   public void teleopPeriodic() {
     controlTabStuff() ;
     normal_driving();
+    limelight_targeting();
+
     // more stuff here.
 
   }
@@ -313,6 +343,14 @@ public class Robot extends TimedRobot {
 
 
   public void controlTabStuff() {
+
+    if (winchLeftControl.getBoolean(false)){
+      winchMotor.set(.8) ;
+    } else if (winchRightControl.getBoolean(false)){
+      winchMotor.set(-.8) ;
+    } else {
+      winchMotor.set(0);
+    }
 
     if (colorWheelSpinControl.getBoolean(false)) {
       wheelSpinnerMotor.set(.7) ;
@@ -561,6 +599,8 @@ public class Robot extends TimedRobot {
   public void all_values_to_dashboard() {
     SmartDashboard.putNumber("TILT:",tiltEncoder.getDistance());
     SmartDashboard.putNumber("TILT-SPEED:",tiltEncoder.getRate());
+    SmartDashboard.putString("CURRENT TILT:",current_tilt_location);
+ 
     SmartDashboard.putNumber("DIAL:",dialEncoder.getDistance());
     SmartDashboard.putNumber("beam-1:", beam1.getAverageVoltage()) ;
     SmartDashboard.putNumber("beam-2:", beam2.getAverageVoltage()) ;
@@ -571,7 +611,7 @@ public class Robot extends TimedRobot {
   // -------------------------------------------------------------
   public void setupTestButtons() {
     intakeControl = Shuffleboard.getTab("controls")
-    .add("spin intake roller IN",false)
+    .add("shooter wheels IN",false)
     .withWidget(BuiltInWidgets.kToggleButton)
     .withPosition(1, 0)
     .withSize(3, 1)
@@ -591,12 +631,7 @@ public class Robot extends TimedRobot {
     .withSize(3, 1)
     .getEntry();
 
-    dialNotchControl = Shuffleboard.getTab("controls")
-    .add("move-dial one click",false)
-    .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(1, 6)
-    .withSize(3, 1)
-    .getEntry();
+
 
     tiltFloorControl = Shuffleboard.getTab("controls")
     .add("tilt-to-floor",false)
@@ -649,6 +684,13 @@ public class Robot extends TimedRobot {
     .withSize(3, 1)
     .getEntry();
 
+    dialNotchControl = Shuffleboard.getTab("controls")
+    .add("move-dial one click",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(7, 6)
+    .withSize(3, 1)
+    .getEntry();
+
     colorWheelSpinControl = Shuffleboard.getTab("controls")
     .add("Spin color wheel",false)
     .withWidget(BuiltInWidgets.kToggleButton)
@@ -668,7 +710,7 @@ public class Robot extends TimedRobot {
     .withWidget(BuiltInWidgets.kToggleButton)
     .withPosition(10, 4)
     .withSize(3, 1)
-    .getEntry();
+    .getEntry();  
 
     colorWheelElevatorAtWheelControl = Shuffleboard.getTab("controls")
     .add("Wheel elevator AT COLOR WHEEL",false)
@@ -677,6 +719,20 @@ public class Robot extends TimedRobot {
     .withSize(3, 1)
     .getEntry();
 
+    
+    winchLeftControl = Shuffleboard.getTab("controls")
+    .add("Winch LEFT",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(13, 0)
+    .withSize(3, 1)
+    .getEntry();
+
+    winchRightControl = Shuffleboard.getTab("controls")
+    .add("Winch RIGHT",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(13, 2)
+    .withSize(3, 1)
+    .getEntry();
 
     }
 
@@ -705,6 +761,83 @@ public class Robot extends TimedRobot {
     drive.arcadeDrive(-joyy * throttle , joyz * turn_throttle );
   }
 
+  public void limelight_targeting() {
+
+    table.getEntry("camMode").setNumber(0);
+
+    double x = tx.getDouble(0.0);
+    double y = ty.getDouble(0.0);
+    double area = ta.getDouble(0.0);
+    double havetarget = table.getEntry("tv").getDouble(0.0);
+
+    SmartDashboard.putNumber("LL-X",x);
+    SmartDashboard.putNumber("have target", havetarget);
+    SmartDashboard.putNumber("new", table.getEntry("tx").getDouble(0));
+    SmartDashboard.putNumber("Y value", y);
+    boolean targeter = joystick.getRawButtonPressed(8);
+    if (targeter == true){
+      table.getEntry("ledMode").setNumber(0);
+      targeting = true;
+    }
+    SmartDashboard.putBoolean("targeting",targeting);
+
+    if (targeting == true && havetarget == 0){
+      drive.arcadeDrive(0, 0);
+      targeting = false;
+      table.getEntry("ledMode").setNumber(1);
+
+    }
+
+    if ( targeting == false){
+      normal_driving();
+    }
+
+    if (havetarget == 1 && targeting == true){
+      double steer = 0;
+      if (x > 10){
+        steer = -0.6;
+      }
+      else if (x < -10){
+        steer = -0.6;
+      }
+      else if (x < 10 && x > 3){
+        steer=0.55;
+      }
+      else if (x > -10 && x < -3){
+        steer = -0.55;
+      }
+      else if ( x > -3 && x < 3 ){
+        steer = 0;
+      }
+
+        double drivespeed = 0;
+        if (area < 0.5){
+          drivespeed = 0.8;
+        }
+        else if (area > 6){
+          drivespeed = -0.8;
+        }
+        else if (area > 3 && area < 6){
+          drivespeed = -0.55;
+        }
+        else if (area > 1.5 && area < 2.4){
+          drivespeed = -0.55;
+        }
+        else if ( area > 2.4 && area < 3 ){
+          drivespeed = 0;
+        }
+        drive.arcadeDrive(drivespeed, steer);
+        if (drivespeed == 0 && steer == 0){
+          targeting = false;
+        }
+  
+
+
+
+
+    }
+
+  }
 // -------------------------------------------------------------
 // -------------------------------------------------------------
 // -------------------------------------------------------------
