@@ -57,6 +57,10 @@ public class Robot extends TimedRobot {
   UsbCamera camera;
   NetworkTableEntry camstream;
   boolean limelight_target_button = false;
+  boolean xbox_override = false;
+  boolean xbox_low_dump_mode_on = false ;
+  boolean outtake_trigger_mode = false;
+  
 
   // MOTORS:
   CANSparkMax shooterWheel1;
@@ -71,6 +75,7 @@ public class Robot extends TimedRobot {
   WPI_VictorSPX wheelSpinnerMotor ;
   WPI_VictorSPX wheelElevatorMotor ;
   CANSparkMax winchMotor ;
+  WPI_VictorSPX deployMotor ;
 
   // CONTROLLERS:
   XboxController xbox = new XboxController(1);
@@ -89,6 +94,8 @@ public class Robot extends TimedRobot {
   DifferentialDrive drive ;
   boolean tab_intake_mode_on = false ;
   boolean tab_low_dump_mode_on = false ;
+  boolean intake_mode_xbox_on = false;
+  boolean doing_manual_tilt = false ;
 
 
   /// DIAL
@@ -117,6 +124,8 @@ public class Robot extends TimedRobot {
   private NetworkTableEntry tiltFloorControl ;
   private NetworkTableEntry tiltLowControl ;
   private NetworkTableEntry tiltHighControl ;
+  private NetworkTableEntry tiltMotorRightControl ;
+  private NetworkTableEntry tiltMotorLeftControl ;
 
   private NetworkTableEntry beamIntakeControl ;
   private NetworkTableEntry allIntakeControl ;
@@ -130,6 +139,13 @@ public class Robot extends TimedRobot {
 
   private NetworkTableEntry winchLeftControl ;
   private NetworkTableEntry winchRightControl;
+  private NetworkTableEntry usePanelControl ;
+  private NetworkTableEntry deployControl ;
+  private NetworkTableEntry deployInControl ;
+  private NetworkTableEntry deployOutControl ;
+  
+  private NetworkTableEntry zeroControl ;
+
 
   NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
   NetworkTableEntry tx = table.getEntry("tx");
@@ -169,6 +185,7 @@ public class Robot extends TimedRobot {
     wheelElevatorMotor = new WPI_VictorSPX(20);
     wheelSpinnerMotor = new WPI_VictorSPX(26);
     winchMotor = new CANSparkMax(12,MotorType.kBrushless) ;
+    deployMotor = new WPI_VictorSPX(27) ;
 
     setupTestButtons() ; // test mode buttons on shuffleboard.
 
@@ -246,7 +263,22 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void teleopPeriodic() {
-    controlTabStuff() ;
+
+    if (zeroControl.getBoolean(false)){ // zero all encoders if ZERO button pushed.
+      tiltEncoder.reset();
+      dialEncoder.reset() ;
+      wheelElevatorEncoder.reset();
+      zeroControl.setBoolean(false);
+    }
+
+    if (usePanelControl.getBoolean(false)){
+      controlTabStuff() ;
+      normal_driving();
+      return;
+    }
+
+    do_control_maps() ;
+
     normal_driving();
     limelight_targeting();
 
@@ -255,6 +287,139 @@ public class Robot extends TimedRobot {
   }
 
   // -------------------------------------------------------------
+  public void do_control_maps() {
+
+    boolean override_button = xbox.getRawButtonPressed(10);
+    int tilting_to_floor = xbox.getPOV();
+    int tilting_low = xbox.getPOV();
+    int tilting_high = xbox.getPOV();
+    double wheel_elevator = xbox.getRawAxis(3);
+    double vertical_dial_override = xbox.getRawAxis(1);
+    boolean spinning_color_wheel = xbox.getRawButton(12);
+    boolean shooter_wheels_out_high_manually = xbox.getRawButton(5);
+    boolean intake_out = joystick.getRawButton(1);
+
+  // set an override button to go into override mode
+  SmartDashboard.putBoolean("xbox override", xbox_override);
+    if (override_button == true && xbox_override == false){
+      xbox_override = true;
+    } else if (override_button == true){
+      xbox_override = false;
+    }
+
+    
+    if (xbox_override == true){     // override mode
+      
+      // manual override for the wheel elevator going up and down that ignores the sensor. CAREFUL!!
+      if (Math.abs(wheel_elevator) > 0.05){
+        wheelElevatorMotor.set(wheel_elevator);
+      } else {
+        wheelElevatorMotor.set(0);
+      }
+      // Button that you have to hold down to spin the wheel
+      if (spinning_color_wheel == true){
+        wheelSpinnerMotor.set(0.7);
+      } else {
+        wheelSpinnerMotor.set(0);
+      }
+
+      // move dial up and down manually
+      if (Math.abs(vertical_dial_override) > 0.05){
+        tiltMotor.set(vertical_dial_override);
+      } else if ( vertical_dial_override < 0.05){
+        tiltMotor.set(0);
+      }
+      // shoot the blue wheels out and spin the dial out at the same time
+      if (shooter_wheels_out_high_manually == true){
+        shooterWheel1.set(-1);
+        shooterWheel2.set(1);
+        dialMotor.set(-1);
+      }
+    }
+
+    // code for tilting the dial to set value
+    if ( xbox_override == false){
+
+      // this sets the trigger on the joystick to run the intake backwards so we don't get stuck on balls
+      if (intake_out == true && outtake_trigger_mode == false){
+        outtake_trigger_mode = true;
+      } else if (joystick.getRawButtonReleased(1) == true )  {
+        intakeMotor.set(0);
+        outtake_trigger_mode = false;
+        return ;
+      }
+      if (outtake_trigger_mode == true) {
+        intakeMotor.set(-1);
+        return ; // prevent the running of run_all_intake.
+      }
+
+        // TILTING: 
+      if (tilting_to_floor == 180){
+        tiltGoal = "floor" ;
+      } else if ( tilting_low == 90){
+        tiltGoal = "low" ;
+      } else if (tilting_high == 0){
+        tiltGoal = "high" ;
+      } // end code for tilting dial to set value
+      do_tilting();
+
+
+      // hit button, all intake mechanisms will turn on, hit it again, and they will turn off
+      boolean button7pressed = xbox.getRawButtonPressed(7) ;
+      if ( button7pressed == true && intake_mode_xbox_on == false){
+        intake_mode_xbox_on = true ;
+      } else if (button7pressed == true) {
+        intake_mode_xbox_on = false;
+        stop_all_intake();
+      }
+      if (intake_mode_xbox_on == true) {
+        run_all_intake();
+      }
+
+
+      // hit button, low dump mode will turn on, hit button again, low dump mode will turn off
+      boolean button6pressed = xbox.getRawButtonPressed(6) ;
+      if ( button6pressed == true && xbox_low_dump_mode_on == false){
+        xbox_low_dump_mode_on = true ;
+      } else if (button6pressed == true) {
+        xbox_low_dump_mode_on = false;
+        stop_low_dump();
+      }
+      if (xbox_low_dump_mode_on == true){
+        do_low_dump();
+      }
+       
+      
+      // setting wheel elavator to the right joystick on the xbox controller. It's a manual up and down, with stops at the ends
+      // Click joystick in to spin the wheel
+      if (Math.abs(wheel_elevator) > 0.05 ){
+        double wheelHeight = wheelElevatorEncoder.getDistance() ;
+        if ( wheelHeight > 850 && wheel_elevator < 0) {
+          wheelElevatorMotor.set(0);
+        } else if (wheelHeight < 5 && wheel_elevator > 0) {
+          wheelElevatorMotor.set(0);
+        } else {
+            if (wheelHeight > 770){
+              wheelElevatorMotor.set(wheel_elevator * 0.6);
+            } else{
+              wheelElevatorMotor.set(wheel_elevator);
+            }
+        }
+      }
+      else {
+        wheelElevatorMotor.set(0);
+      }
+      if (spinning_color_wheel == true){
+        wheelSpinnerMotor.set(0.7);
+      } else {
+        wheelSpinnerMotor.set(0);
+      }
+    }
+  }
+  
+
+    
+
   // -------------------------------------------------------------
   public void intake_rollers_on() {
     intakeMotor.set(.4) ;
@@ -293,8 +458,8 @@ public class Robot extends TimedRobot {
   
   // --------------------------------------
   public void do_wheel_height() {
-    double wheel_up_goal = 800 ;
-    double wheel_atwheel_goal = 750 ;
+    double wheel_up_goal = 850 ;
+    double wheel_atwheel_goal = 805 ;
     double wheelHeight = wheelElevatorEncoder.getDistance() ;
 
     current_wheel_height = "" ;
@@ -351,6 +516,22 @@ public class Robot extends TimedRobot {
     } else {
       winchMotor.set(0);
     }
+    if (deployInControl.getBoolean(false)) {
+      deployMotor.set(.5);
+    } else if (deployOutControl.getBoolean(false)){
+      deployMotor.set(-.5) ;
+    } else {
+      deployMotor.set(0);
+    }
+
+
+    /*
+    double deploySpeed = deployControl.getDouble(0) ;
+    if (Math.abs(deploySpeed) > .05 ) {
+      deployMotor.set(deploySpeed);
+    } else {
+      deployMotor.set(0) ;
+    } */
 
     if (colorWheelSpinControl.getBoolean(false)) {
       wheelSpinnerMotor.set(.7) ;
@@ -392,7 +573,7 @@ public class Robot extends TimedRobot {
         && Math.abs(dialMotor.get()) < .05
         ) {
           tab_spinDialOut = true ;
-          dialMotor.set(-1) ;
+          dialMotor.set(-0.5) ;
           return ;
     } else if (tab_spinDialOut == true){
       tab_spinDialOut = false ;
@@ -455,8 +636,21 @@ public class Robot extends TimedRobot {
       tiltGoal = "high" ;
       tiltHighControl.setBoolean(false) ;
     } 
-    do_tilting();
-
+    if (tiltMotorLeftControl.getBoolean(false)){
+      tiltMotor.set(.5);
+      tiltGoal = "" ;
+      doing_manual_tilt = true ;
+    } else if (tiltMotorRightControl.getBoolean(false)){
+      tiltMotor.set(-.5);
+      tiltGoal = "" ;
+      doing_manual_tilt = true ;
+    } else {
+      if (doing_manual_tilt == true) {
+        doing_manual_tilt = false ;
+        tiltMotor.set(0) ;
+      }
+      do_tilting();
+    }
 
     // Color Wheel
 
@@ -479,13 +673,13 @@ public class Robot extends TimedRobot {
 
     double tiltPosition = tiltEncoder.getDistance();
     // Robot starts HIGH, at 0.  increase to get to low, increase more to get to floor.
-    double low_goal = 150 ;
-    double floor_goal = 400 ;
+    double low_goal = 100 ;
+    double floor_goal = 412 ;
 
     current_tilt_location = "";
 
     if (tiltGoal == "high"){
-      if (tiltPosition < 30)  {
+      if (tiltPosition < 10)  {
         // then we are AT high.  so stop doing anything.
         current_tilt_location = "high" ;
         tiltMotor.set(0);
@@ -515,7 +709,7 @@ public class Robot extends TimedRobot {
     
 
     if (tiltGoal == "floor") {
-      if (  Math.abs( floor_goal - tiltPosition) < 30) {
+      if (  Math.abs( floor_goal - tiltPosition) < 10) {
         current_tilt_location = "floor";
         tiltMotor.set(0);
         return ;
@@ -584,8 +778,8 @@ public class Robot extends TimedRobot {
     shooterWheel2.set(-.5) ;
   }
   public void run_shooter_wheels_for_shooting_out_high() {
-    shooterWheel1.set(-1);
-    shooterWheel2.set(1) ;
+    shooterWheel1.set(-0.5);
+    shooterWheel2.set(0.5) ;
   }
   public void run_shooter_wheels_for_shooting_out_low() {
     shooterWheel1.set(-.3);
@@ -720,19 +914,69 @@ public class Robot extends TimedRobot {
     .getEntry();
 
     
-    winchLeftControl = Shuffleboard.getTab("controls")
-    .add("Winch LEFT",false)
+    tiltMotorLeftControl = Shuffleboard.getTab("controls")
+    .add("TILT MOTOR LEFT",false)
     .withWidget(BuiltInWidgets.kToggleButton)
     .withPosition(13, 0)
     .withSize(3, 1)
     .getEntry();
-
-    winchRightControl = Shuffleboard.getTab("controls")
-    .add("Winch RIGHT",false)
+    tiltMotorRightControl = Shuffleboard.getTab("controls")
+    .add("TILT MOTOR RIGHT",false)
     .withWidget(BuiltInWidgets.kToggleButton)
     .withPosition(13, 2)
     .withSize(3, 1)
     .getEntry();
+
+
+    usePanelControl = Shuffleboard.getTab("controls")
+    .add("USE PANEL",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(16, 0)
+    .withSize(3, 1)
+    .getEntry();
+
+    zeroControl = Shuffleboard.getTab("controls")
+    .add("Zero Encoders",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(16, 2)
+    .withSize(3, 1)
+    .getEntry();
+    
+
+    winchLeftControl = Shuffleboard.getTab("climb")
+    .add("Winch LEFT",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(10, 0)
+    .withSize(3, 1)
+    .getEntry();
+
+    winchRightControl = Shuffleboard.getTab("climb")
+    .add("Winch RIGHT",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(10, 2)
+    .withSize(3, 1)
+    .getEntry();
+
+
+    deployOutControl = Shuffleboard.getTab("climb")
+    .add("Deploy Motor OUT",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(16, 0)
+    .withSize(3, 1)
+    .getEntry();
+
+    deployInControl = Shuffleboard.getTab("climb")
+    .add("Deploy Motor IN",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(16, 2)
+    .withSize(3, 1)
+    .getEntry();
+
+  /*  deployControl = Shuffleboard.getTab("climb")
+    .add("Deploy Motor",0)
+    .withWidget(BuiltInWidgets.kNumberSlider)
+    .withPosition(10, 5)
+    .getEntry();*/
 
     }
 
@@ -784,7 +1028,7 @@ public class Robot extends TimedRobot {
     if (targeting == true && havetarget == 0){
       drive.arcadeDrive(0, 0);
       targeting = false;
-      table.getEntry("ledMode").setNumber(1);
+     // table.getEntry("ledMode").setNumber(1);
 
     }
 
