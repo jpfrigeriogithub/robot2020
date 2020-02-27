@@ -139,6 +139,7 @@ public class Robot extends TimedRobot {
   String tiltGoal = "high" ;
   String current_tilt_location = "" ;
   double startedLoweringTime = 0 ;
+  double tiltToAngleValue = 0 ;
 
   //network tables:
   private NetworkTableEntry intakeControl;
@@ -156,6 +157,7 @@ public class Robot extends TimedRobot {
   private NetworkTableEntry allIntakeControl ;
   private NetworkTableEntry lowDumpControl ;
   private NetworkTableEntry spinDialOutControl ;
+  private NetworkTableEntry spinDialOutControl2 ;
  
   private NetworkTableEntry colorWheelSpinControl ;
   private NetworkTableEntry colorWheelElevatorDownControl; 
@@ -175,7 +177,10 @@ public class Robot extends TimedRobot {
   private NetworkTableEntry extraControl ;
   
   private NetworkTableEntry zeroControl ;
-
+  private NetworkTableEntry shooterSpeedControl ;
+  private NetworkTableEntry shooterSpeedOnOffControl ;
+  private NetworkTableEntry tiltAngleControl ;
+  private NetworkTableEntry tiltAngleOnOffControl ;
 
   private NetworkTableEntry limelightModeControl ;
   private NetworkTableEntry limelightLEDControl ;
@@ -255,7 +260,6 @@ public class Robot extends TimedRobot {
   @Override
   public void robotPeriodic() {
     all_values_to_dashboard();
-
   }
 
 
@@ -324,15 +328,9 @@ public class Robot extends TimedRobot {
       return;
     }
 
-   // if (joystick.getRawButton(11)){ gyro_test() ; return ; }
-
-
     do_control_maps() ;
-
     normal_driving();
-   // limelight_targeting();
 
-    // more stuff here.
 
   }
 
@@ -564,10 +562,6 @@ public class Robot extends TimedRobot {
         wheelElevatorMotor.set(-.7) ;
       }
     }
-
-
-
-
   }
   
   // --------------------------------------
@@ -649,7 +643,7 @@ public class Robot extends TimedRobot {
 
 
     // spin the dial OUT:
-    if (spinDialOutControl.getBoolean(false) 
+    if (spinDialOutControl.getBoolean(false) || spinDialOutControl2.getBoolean(false)
         && tab_intake_mode_on == false  
         && move_dial_one_notch == false
         && Math.abs(dialMotor.get()) < .05
@@ -683,6 +677,10 @@ public class Robot extends TimedRobot {
       run_shooter_wheels_for_shooting_out_high() ;
     } else if (shooterControlLow.getBoolean(false)){
       run_shooter_wheels_for_shooting_out_low() ;
+    } else if (shooterSpeedOnOffControl.getBoolean(false)) {
+      double thespeed = shooterSpeedControl.getDouble(0) ;
+      shooterWheel1.set(-thespeed);
+      shooterWheel2.set(thespeed) ;
     } else {
       stop_shooter_wheels();
     }
@@ -717,7 +715,13 @@ public class Robot extends TimedRobot {
     } else if (tiltHighControl.getBoolean(false)) {
       tiltGoal = "high" ;
       tiltHighControl.setBoolean(false) ;
+    } else if (tiltAngleOnOffControl.getBoolean(false)){
+      tiltToAngleValue = tiltAngleControl.getDouble(0) ;
+      tiltGoal = "angle" ;
+      tiltAngleOnOffControl.setBoolean(false) ;
     } 
+   
+    // manual tilt:
     if (tiltMotorLeftControl.getBoolean(false)){
       tiltMotor.set(.5);
       tiltGoal = "" ;
@@ -825,6 +829,23 @@ public class Robot extends TimedRobot {
         return ;
       }
     }
+
+    if (tiltGoal == "angle") {
+      if (Math.abs(tiltPosition - tiltToAngleValue) < 15) {
+        current_tilt_location = "angle";
+        tiltMotor.set(0) ;
+        return;
+      }
+      if (tiltPosition < tiltToAngleValue) {
+        tiltMotor.set(.6) ;
+        return ;
+      }
+      if (tiltPosition > tiltToAngleValue) {
+        tiltMotor.set(-.7) ;
+        return;
+      }
+    }
+
   }
 
   //  dial around one ball at a time.
@@ -872,13 +893,13 @@ public class Robot extends TimedRobot {
     shooterWheel2.set(0) ;
   }
   public void run_shooter_wheels_for_intake() {
-    double SPEED = .85 ;
+    double SPEED = .65 ;
     shooterWheel1.set(SPEED);
     shooterWheel2.set(-SPEED) ;
   }
   public void run_shooter_wheels_for_shooting_out_high() {
-    shooterWheel1.set(-0.5);
-    shooterWheel2.set(0.5) ;
+    shooterWheel1.set(-0.8);
+    shooterWheel2.set(0.8) ;
   }
   public void run_shooter_wheels_for_shooting_out_low() {
     shooterWheel1.set(-.6);
@@ -1094,9 +1115,40 @@ public class Robot extends TimedRobot {
     .withSize(3, 1)
     .getEntry();
 
+    shooterSpeedControl = Shuffleboard.getTab("LIME")
+    .add("shooter speed",.5)
+    .withPosition(11,0)
+    .getEntry();
+
+    shooterSpeedOnOffControl = Shuffleboard.getTab("LIME")
+    .add("Shoot at this speed",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(14, 0)
+    .withSize(3, 1)
+    .getEntry();
+
+    spinDialOutControl2 = Shuffleboard.getTab("LIME")
+    .add("Spin dial for shooting",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(14, 4)
+    .withSize(3, 1)
+    .getEntry();
+
+    tiltAngleControl = Shuffleboard.getTab("LIME")
+    .add("tilt 0-400",300)
+    .withPosition(11,2)
+    .getEntry();
+
+    tiltAngleOnOffControl = Shuffleboard.getTab("LIME")
+    .add("tilt to angle",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(11,4)
+    .withSize(3,1)
+    .getEntry();
+
     pidKpControl = Shuffleboard.getTab("PID")
     .add("KP",.03)
-    .getEntry() ;    
+    .getEntry() ;     
     pidKdControl = Shuffleboard.getTab("PID")
     .add("KD",.05)
     .getEntry() ;
