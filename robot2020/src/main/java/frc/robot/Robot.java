@@ -18,6 +18,7 @@ import edu.wpi.first.networktables.NetworkTableEntry;
 import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.networktables.*;
 import edu.wpi.first.wpilibj.Joystick;
+import edu.wpi.first.wpilibj.SPI;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj.drive.* ;
@@ -42,6 +43,8 @@ import com.revrobotics.CANSparkMax;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;
 import com.revrobotics.CANEncoder;
 import edu.wpi.first.wpilibj.Encoder;
+import edu.wpi.first.wpilibj.ADXRS450_Gyro;
+
 
 
 
@@ -51,6 +54,10 @@ public class Robot extends TimedRobot {
   private static final String blahblahblah = "blah auton";
   private String m_autoSelected;
   private final SendableChooser<String> m_chooser = new SendableChooser<>();
+
+  private final ADXRS450_Gyro gyro = new ADXRS450_Gyro();
+
+  PIDController pc ;
 
   
   boolean targeting = false;
@@ -86,6 +93,9 @@ public class Robot extends TimedRobot {
   Encoder dialEncoder ;
   Encoder tiltEncoder ;
   Encoder wheelElevatorEncoder ;
+  AnalogInput climbSwitch = new AnalogInput(2) ;
+
+
 
   // global'ish Variables used in routines below:
   Timer myClock = new Timer();
@@ -96,6 +106,7 @@ public class Robot extends TimedRobot {
   boolean tab_low_dump_mode_on = false ;
   boolean intake_mode_xbox_on = false;
   boolean doing_manual_tilt = false ;
+  double intake_roller_speed_in = .3 ;
 
 
   /// DIAL
@@ -114,6 +125,7 @@ public class Robot extends TimedRobot {
   // TILT:
   String tiltGoal = "high" ;
   String current_tilt_location = "" ;
+  double startedLoweringTime = 0 ;
 
   //network tables:
   private NetworkTableEntry intakeControl;
@@ -143,9 +155,17 @@ public class Robot extends TimedRobot {
   private NetworkTableEntry deployControl ;
   private NetworkTableEntry deployInControl ;
   private NetworkTableEntry deployOutControl ;
+
+  private NetworkTableEntry pidKpControl;
+  private NetworkTableEntry pidKdControl ;
+  private NetworkTableEntry pidKiControl ;
+  private NetworkTableEntry extraControl ;
   
   private NetworkTableEntry zeroControl ;
 
+
+  private NetworkTableEntry limelightModeControl ;
+  private NetworkTableEntry limelightLEDControl ;
 
   NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
   NetworkTableEntry tx = table.getEntry("tx");
@@ -159,6 +179,8 @@ public class Robot extends TimedRobot {
     myClock.reset();
     table.getEntry("pipeline").setNumber(0);
     CameraServer.getInstance().startAutomaticCapture("Camera", 0);
+
+
 
     NetworkTableInstance inst = NetworkTableInstance.getDefault();
     NetworkTable CamPub = inst.getTable("CameraPublisher");
@@ -189,6 +211,8 @@ public class Robot extends TimedRobot {
 
     setupTestButtons() ; // test mode buttons on shuffleboard.
 
+
+
     // encoders:
     tiltEncoder = new Encoder (0,1);
     dialEncoder = new Encoder (2,3) ;
@@ -204,7 +228,7 @@ public class Robot extends TimedRobot {
     drive = new DifferentialDrive(talonLeftDrive,talonRightDrive);
 
     
-    table.getEntry("ledMode").setNumber(1);
+    table.getEntry("ledMode").setNumber(1); // start with LED off ?
 
 
   }
@@ -229,9 +253,7 @@ public class Robot extends TimedRobot {
 
   }
 
-  /**
-   * This function is called periodically during autonomous.
-   */
+
   @Override
   public void autonomousPeriodic() {
 
@@ -257,10 +279,17 @@ public class Robot extends TimedRobot {
 
   @Override
   public void teleopInit() {
+    //    pc = new PIDController(kP,kI,kD) ;
+    double Kp = pidKpControl.getDouble(.03) ;
+    double Kd = pidKdControl.getDouble(.05) ;
+    //double Kp = .5 ;
+    double Ki = 0 ; //double Kd = 0 ;
+    SmartDashboard.putNumber("KP", Kp) ;
+    SmartDashboard.putNumber("KD", Kd) ;
+    pc = new PIDController(Kp,Ki,Kd) ;
+    gyro.reset();
   }
-  /**
-   * This function is called periodically during operator control.
-   */
+
   @Override
   public void teleopPeriodic() {
 
@@ -271,21 +300,43 @@ public class Robot extends TimedRobot {
       zeroControl.setBoolean(false);
     }
 
-    if (usePanelControl.getBoolean(false)){
+    if (usePanelControl.getBoolean(false)){ // "USE CONTROL PANEL" button is pressed.
       controlTabStuff() ;
       normal_driving();
       return;
     }
 
+   // if (joystick.getRawButton(11)){ gyro_test() ; return ; }
+
+
     do_control_maps() ;
 
     normal_driving();
-    limelight_targeting();
+   // limelight_targeting();
 
     // more stuff here.
 
   }
 
+  // -------------------------------------------------------------
+  // -------------------------------------------------------------
+  public void gyro_test() {
+
+    double answer = pc.calculate(gyro.getAngle(),90) ;
+    SmartDashboard.putNumber("answer:", answer) ;
+
+    // STRAIGHT LINE:
+    //turningValue = Math.copySign(turningValue, m_joystick.getY());
+    //m_myRobot.arcadeDrive(m_joystick.getY(), turningValue);
+    double extrastuff = extraControl.getDouble(.2) ;
+    SmartDashboard.putNumber("EXTRA", extrastuff) ;
+    if (answer < 0) {
+      drive.arcadeDrive(0, answer - extrastuff);
+    } else {
+      drive.arcadeDrive(0, answer + extrastuff);
+    }
+  }
+  
   // -------------------------------------------------------------
   public void do_control_maps() {
 
@@ -410,19 +461,16 @@ public class Robot extends TimedRobot {
         wheelElevatorMotor.set(0);
       }
       if (spinning_color_wheel == true){
-        wheelSpinnerMotor.set(0.7);
+        wheelSpinnerMotor.set(1);
       } else {
         wheelSpinnerMotor.set(0);
       }
     }
   }
   
-
-    
-
   // -------------------------------------------------------------
   public void intake_rollers_on() {
-    intakeMotor.set(.4) ;
+    intakeMotor.set(intake_roller_speed_in) ;
   }
   public void intake_rollers_off() {
     intakeMotor.set(0) ;
@@ -509,6 +557,18 @@ public class Robot extends TimedRobot {
 
   public void controlTabStuff() {
 
+    if (limelightLEDControl.getBoolean(false)){
+      limelight_LED_mode(true);
+    } else {
+      limelight_LED_mode(false);
+    }
+    if (limelightModeControl.getBoolean(false)){
+      limelight_camera_mode(true);
+    } else {
+      limelight_camera_mode(false);
+    }
+
+
     if (winchLeftControl.getBoolean(false)){
       winchMotor.set(.8) ;
     } else if (winchRightControl.getBoolean(false)){
@@ -517,9 +577,13 @@ public class Robot extends TimedRobot {
       winchMotor.set(0);
     }
     if (deployInControl.getBoolean(false)) {
-      deployMotor.set(.5);
+      deployMotor.set(.8);
     } else if (deployOutControl.getBoolean(false)){
-      deployMotor.set(-.5) ;
+      if (climbSwitch.getAverageVoltage() > 2){
+        deployMotor.set(-.8) ;
+      } else {
+        deployMotor.set(0) ;
+      }
     } else {
       deployMotor.set(0);
     }
@@ -573,7 +637,7 @@ public class Robot extends TimedRobot {
         && Math.abs(dialMotor.get()) < .05
         ) {
           tab_spinDialOut = true ;
-          dialMotor.set(-0.5) ;
+          dialMotor.set(-1) ;
           return ;
     } else if (tab_spinDialOut == true){
       tab_spinDialOut = false ;
@@ -656,10 +720,6 @@ public class Robot extends TimedRobot {
 
   }
 
-
-  /**
-   * This function is called periodically during test mode.
-   */
   @Override
   public void testPeriodic() {
 
@@ -673,10 +733,34 @@ public class Robot extends TimedRobot {
 
     double tiltPosition = tiltEncoder.getDistance();
     // Robot starts HIGH, at 0.  increase to get to low, increase more to get to floor.
-    double low_goal = 100 ;
-    double floor_goal = 412 ;
+    double low_goal = 125 ;
+    double floor_goal = 410 ;
 
     current_tilt_location = "";
+
+    /* if the motor is lowering the dial, (ie, has a positive set value), ie, moving toward "low" or "floor",
+        it should reach its goal within 3 seconds, otherwise there is probably a ball stuck under it.
+        It won't reach the encoder value, so it will keep running until it unwinds.
+        If that's the case, stop the motor and set tiltgoal to null so that it stops trying.
+    */
+    if ((tiltGoal == "low" || tiltGoal == "floor") && tiltMotor.get() > 0) {
+      if (startedLoweringTime > 0) {
+        double elapsed = myClock.get() - startedLoweringTime;
+        if (elapsed > 3) {
+          tiltMotor.set(0);
+          tiltGoal = "" ;
+          System.out.println("lowering failed after 3 sec, bailing");
+          startedLoweringTime = 0 ;
+          return ;
+        }
+      } else {
+        startedLoweringTime = myClock.get() ;
+      }
+    } else {
+      startedLoweringTime = 0 ;
+    }
+
+
 
     if (tiltGoal == "high"){
       if (tiltPosition < 10)  {
@@ -686,7 +770,7 @@ public class Robot extends TimedRobot {
         return ;
       }
       // need to raise it to get to high
-      tiltMotor.set(-.7);
+      tiltMotor.set(-.8);
       return ;
     }
 
@@ -696,12 +780,12 @@ public class Robot extends TimedRobot {
         tiltMotor.set(0);
         return ;
       }
-      // it's too low, raise it up:
+      // it's too high, lower it.
       if ( tiltPosition < low_goal) {
         tiltMotor.set(.6) ;
         return ;
       }
-      if ( tiltPosition > low_goal) {
+      if ( tiltPosition > low_goal) { // too low, raise it.
         tiltMotor.set(-.7);
         return ;
       }
@@ -709,7 +793,7 @@ public class Robot extends TimedRobot {
     
 
     if (tiltGoal == "floor") {
-      if (  Math.abs( floor_goal - tiltPosition) < 10) {
+      if (  Math.abs( floor_goal - tiltPosition) < 15) {
         current_tilt_location = "floor";
         tiltMotor.set(0);
         return ;
@@ -725,8 +809,6 @@ public class Robot extends TimedRobot {
     }
   }
 
-
-  // -------------------------------------------------------------
   //  dial around one ball at a time.
   public void dial_intake_turning_by_degrees() {
     if (move_dial_one_notch == true) {
@@ -756,7 +838,7 @@ public class Robot extends TimedRobot {
   public void dial_by_sensor() {
       // when a ball breaks beam 1, turn until both beam 1 and beam 2 are not broken.
     if ( beam1.getAverageVoltage() < .1) {
-      dialMotor.set(.6) ;
+      dialMotor.set(1) ;
       return;
     }
     if (beam1.getAverageVoltage() > .1 && beam2.getAverageVoltage() > .1){
@@ -765,8 +847,6 @@ public class Robot extends TimedRobot {
 
   }
 
-
-
   // -------------------------------------------------------------
   // shooter wheel controls:
   public void stop_shooter_wheels(){
@@ -774,21 +854,18 @@ public class Robot extends TimedRobot {
     shooterWheel2.set(0) ;
   }
   public void run_shooter_wheels_for_intake() {
-    shooterWheel1.set(.5);
-    shooterWheel2.set(-.5) ;
+    double SPEED = .85 ;
+    shooterWheel1.set(SPEED);
+    shooterWheel2.set(-SPEED) ;
   }
   public void run_shooter_wheels_for_shooting_out_high() {
     shooterWheel1.set(-0.5);
     shooterWheel2.set(0.5) ;
   }
   public void run_shooter_wheels_for_shooting_out_low() {
-    shooterWheel1.set(-.3);
-    shooterWheel2.set(.3) ;
+    shooterWheel1.set(-.6);
+    shooterWheel2.set(.6) ;
   }
-  // -------------------------------------------------------------
-  // -------------------------------------------------------------
-
-
   //   -------------------------------------------------------------
   public void all_values_to_dashboard() {
     SmartDashboard.putNumber("TILT:",tiltEncoder.getDistance());
@@ -799,6 +876,12 @@ public class Robot extends TimedRobot {
     SmartDashboard.putNumber("beam-1:", beam1.getAverageVoltage()) ;
     SmartDashboard.putNumber("beam-2:", beam2.getAverageVoltage()) ;
     SmartDashboard.putNumber("color-wheel-elevator:", wheelElevatorEncoder.getDistance());
+
+    SmartDashboard.putNumber("angle:", gyro.getAngle()) ;
+    SmartDashboard.putNumber("throttle:", joystick.getThrottle());
+    SmartDashboard.putNumber("climb switch:", climbSwitch.getAverageVoltage());
+
+
 
   }
 
@@ -978,9 +1061,52 @@ public class Robot extends TimedRobot {
     .withPosition(10, 5)
     .getEntry();*/
 
+
+    limelightModeControl = Shuffleboard.getTab("LIME")
+    .add("Camera Target mode switch",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(8, 2)
+    .withSize(3, 1)
+    .getEntry();
+
+    limelightLEDControl = Shuffleboard.getTab("LIME")
+    .add("LEDs on-off",false)
+    .withWidget(BuiltInWidgets.kToggleButton)
+    .withPosition(8, 6)
+    .withSize(3, 1)
+    .getEntry();
+
+    pidKpControl = Shuffleboard.getTab("PID")
+    .add("KP",.03)
+    .getEntry() ;    
+    pidKdControl = Shuffleboard.getTab("PID")
+    .add("KD",.05)
+    .getEntry() ;
+    extraControl = Shuffleboard.getTab("PID")
+    .add("extra",.2)
+    .getEntry() ;
+
     }
 
   // -------------------------------------------------------------
+  public void limelight_camera_mode(boolean CAM){
+    if (CAM == true) {
+      SmartDashboard.putString("here2", "got here2");
+
+      table.getEntry("camMode").setNumber(1);
+      return;
+    }
+    table.getEntry("camMode").setNumber(0);
+  }
+  public void limelight_LED_mode(boolean CAM){
+    if (CAM == true) {
+      SmartDashboard.putString("here", "got here");
+      table.getEntry("ledMode").setNumber(3);
+      return;
+    }
+    table.getEntry("ledMode").setNumber(1);
+  }
+
   // -------------------------------------------------------------
   public void normal_driving() {
     double throttle = (1 - joystick.getThrottle()) /  2.0 ;
@@ -1020,7 +1146,7 @@ public class Robot extends TimedRobot {
     SmartDashboard.putNumber("Y value", y);
     boolean targeter = joystick.getRawButtonPressed(8);
     if (targeter == true){
-      table.getEntry("ledMode").setNumber(0);
+      table.getEntry("ledMode").setNumber(3);
       targeting = true;
     }
     SmartDashboard.putBoolean("targeting",targeting);
@@ -1028,7 +1154,7 @@ public class Robot extends TimedRobot {
     if (targeting == true && havetarget == 0){
       drive.arcadeDrive(0, 0);
       targeting = false;
-     // table.getEntry("ledMode").setNumber(1);
+      table.getEntry("ledMode").setNumber(1);
 
     }
 
