@@ -45,6 +45,11 @@ import com.revrobotics.CANEncoder;
 import edu.wpi.first.wpilibj.Encoder;
 import edu.wpi.first.wpilibj.ADXRS450_Gyro;
 
+import com.revrobotics.ColorSensorV3;
+import com.revrobotics.ColorMatchResult;
+import com.revrobotics.ColorMatch;
+import edu.wpi.first.wpilibj.I2C;
+import edu.wpi.first.wpilibj.util.Color;
 
 
 
@@ -56,6 +61,14 @@ public class Robot extends TimedRobot {
   private final SendableChooser<String> m_chooser = new SendableChooser<>();
 
   private final ADXRS450_Gyro gyro = new ADXRS450_Gyro();
+
+  private final I2C.Port i2cPort = I2C.Port.kOnboard;
+  private final ColorSensorV3 color_sensor = new ColorSensorV3(i2cPort);
+  private final ColorMatch color_matcher = new ColorMatch();
+  private final Color kBlueTarget = ColorMatch.makeColor(0.143, 0.427, 0.429);
+  private final Color kGreenTarget = ColorMatch.makeColor(0.197, 0.561, 0.240);
+  private final Color kRedTarget = ColorMatch.makeColor(0.561, 0.232, 0.114);
+  private final Color kYellowTarget = ColorMatch.makeColor(0.361, 0.524, 0.113);
 
   PIDController pc ;
 
@@ -179,6 +192,11 @@ public class Robot extends TimedRobot {
     myClock.reset();
     table.getEntry("pipeline").setNumber(0);
     CameraServer.getInstance().startAutomaticCapture("Camera", 0);
+
+    color_matcher.addColorMatch(kBlueTarget);
+    color_matcher.addColorMatch(kGreenTarget);
+    color_matcher.addColorMatch(kRedTarget);
+    color_matcher.addColorMatch(kYellowTarget);
 
 
 
@@ -1207,8 +1225,35 @@ public class Robot extends TimedRobot {
 
     }
 
+
+
   }
 // -------------------------------------------------------------
+
+public void do_Colors(){
+
+  Color detectedColor = color_sensor.getColor();
+    String colorString;
+    ColorMatchResult match = color_matcher.matchClosestColor(detectedColor);
+
+    if (match.color == kBlueTarget){
+      colorString = "Blue";
+    } else if (match.color == kGreenTarget){
+        colorString = "Green";
+      } else if (match.color == kRedTarget){
+          colorString = "Red";
+      } else if (match.color == kYellowTarget){
+           colorString = "Yellow";
+      } else {
+          colorString = "No Color Yet";
+      }
+
+      /*SmartDashboard.putNumber("Red", detectedColor.red);
+      SmartDashboard.putNumber("Green", detectedColor.green);
+      SmartDashboard.putNumber("Blue", detectedColor.blue); */
+      SmartDashboard.putNumber("Confidence", match.confidence);
+      SmartDashboard.putString("Detected Color", colorString);
+}
 // -------------------------------------------------------------
 // -------------------------------------------------------------
 
