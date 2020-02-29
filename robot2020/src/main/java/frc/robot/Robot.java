@@ -55,8 +55,8 @@ import edu.wpi.first.wpilibj.util.Color;
 
 public class Robot extends TimedRobot {
   private static final String kDefaultAuto = "Default";
-  private static final String kCustomAuto = "My Auto";
-  private static final String blahblahblah = "blah auton";
+  private static final String Auton2 = "Auton-2";
+  private static final String Auton1 = "Auton-1";
   private String m_autoSelected;
   private final SendableChooser<String> m_chooser = new SendableChooser<>();
 
@@ -70,7 +70,8 @@ public class Robot extends TimedRobot {
   private final Color kRedTarget = ColorMatch.makeColor(0.561, 0.232, 0.114);
   private final Color kYellowTarget = ColorMatch.makeColor(0.361, 0.524, 0.113);
 
-  PIDController pc ;
+  PIDController gyroPID ;
+  PIDController limepid ;
 
   
   boolean targeting = false;
@@ -120,7 +121,14 @@ public class Robot extends TimedRobot {
   boolean intake_mode_xbox_on = false;
   boolean doing_manual_tilt = false ;
   double intake_roller_speed_in = .3 ;
-
+  double jump_backwards_starttime = 0 ;
+  boolean jump_backwards_finished = false ;
+  boolean done_moving = false ;
+  boolean done_moving2 = false ;
+  boolean done_auton_turning = false ;
+  double done_auton_turning_time = 0 ;
+  boolean done_auton_turning2 = false ;
+  boolean ready_to_fire = false ;
 
   /// DIAL
   boolean move_dial_one_notch = false ;
@@ -184,11 +192,20 @@ public class Robot extends TimedRobot {
 
   private NetworkTableEntry limelightModeControl ;
   private NetworkTableEntry limelightLEDControl ;
+  private NetworkTableEntry limeXControl ;
+  private NetworkTableEntry limeYControl ;
+  private NetworkTableEntry limeTAControl ;
+  private NetworkTableEntry limeTControl ;
+  private NetworkTableEntry limeAControl ;
+  private NetworkTableEntry limeSteerControl ;
 
   NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
   NetworkTableEntry tx = table.getEntry("tx");
   NetworkTableEntry ty = table.getEntry("ty");
   NetworkTableEntry ta = table.getEntry("ta");
+
+  Faults _faults = new Faults() ;
+
 
   
   @Override
@@ -210,9 +227,9 @@ public class Robot extends TimedRobot {
     camstream = CamPub.getEntry("camera_stream");
 
     // define autonomous options:
-    m_chooser.setDefaultOption("Default Auto", kDefaultAuto);
-    m_chooser.addOption("My Auto", kCustomAuto);
-    m_chooser.addOption("blah", blahblahblah);
+    m_chooser.setDefaultOption("Default Auton", kDefaultAuto);
+    m_chooser.addOption("Auton1", Auton1);
+    m_chooser.addOption("Auton2", Auton2);
     SmartDashboard.putData("Auto choices", m_chooser);
 
 
@@ -220,9 +237,16 @@ public class Robot extends TimedRobot {
     shooterWheel1 = new CANSparkMax(11, MotorType.kBrushless);
     shooterWheel2 = new CANSparkMax(10, MotorType.kBrushless);
     talonLeftDrive = new WPI_TalonSRX(2);
+      talonLeftDrive.configFactoryDefault() ;
+      talonLeftDrive.setSensorPhase(true);
     talonRightDrive = new WPI_TalonSRX(1);
+      talonRightDrive.configFactoryDefault() ;
+      talonRightDrive.setSensorPhase(true);
+      talonRightDrive.setInverted(true) ;
+
     leftDriveFollow = new WPI_VictorSPX(25);
     rightDriveFollow = new WPI_VictorSPX(24);
+      rightDriveFollow.setInverted(true) ;
     dialMotor = new WPI_VictorSPX(21);
     tiltMotor = new WPI_VictorSPX(22);
     intakeMotor = new WPI_VictorSPX(23);
@@ -233,7 +257,6 @@ public class Robot extends TimedRobot {
     deployMotor = new WPI_VictorSPX(27) ;
 
     setupTestButtons() ; // test mode buttons on shuffleboard.
-
 
 
     // encoders:
@@ -249,9 +272,41 @@ public class Robot extends TimedRobot {
     rightDriveFollow.configFactoryDefault();  
     rightDriveFollow.follow(talonRightDrive);
     drive = new DifferentialDrive(talonLeftDrive,talonRightDrive);
+    drive.setRightSideInverted(false);
 
     
-    table.getEntry("ledMode").setNumber(1); // start with LED off ?
+    limelight_LED_mode(false);
+    limelight_camera_mode(true);
+
+    talonRightDrive.configMotionCruiseVelocity(8000,30);
+    talonRightDrive.configMotionAcceleration(8000,30);
+    talonLeftDrive.configMotionCruiseVelocity(8000,30);
+    talonLeftDrive.configMotionAcceleration(8000,30);
+
+    talonLeftDrive.setSelectedSensorPosition(0,0,30);
+    talonRightDrive.setSelectedSensorPosition(0,0,30);
+
+    talonRightDrive.configClosedloopRamp(.5);
+    talonLeftDrive.configClosedloopRamp(.5);
+
+double P = 0.08 ;
+double I = 0 ;
+double D = 0.0 ;
+double F = 0.2 ;
+    
+talonRightDrive.selectProfileSlot(0,0);
+talonRightDrive.config_kF(0,F,30);
+talonRightDrive.config_kP(0,P,30);
+talonRightDrive.config_kI(0,I,30);
+talonRightDrive.config_kD(0,D,30);    
+
+talonLeftDrive.selectProfileSlot(0,0);
+talonLeftDrive.config_kF(0,F,30);
+talonLeftDrive.config_kP(0,P,30);
+talonLeftDrive.config_kI(0,I,30);
+talonLeftDrive.config_kD(0,D,30);
+
+gyroPID = new PIDController(.05,0,.01) ;
 
 
   }
@@ -260,6 +315,7 @@ public class Robot extends TimedRobot {
   @Override
   public void robotPeriodic() {
     all_values_to_dashboard();
+  
   }
 
 
@@ -268,6 +324,14 @@ public class Robot extends TimedRobot {
       tiltEncoder.reset();
       dialEncoder.reset() ;
       wheelElevatorEncoder.reset();
+      talonLeftDrive.setSelectedSensorPosition(0,0,30);
+      talonRightDrive.setSelectedSensorPosition(0,0,30);
+      gyro.reset();
+      jump_backwards_finished = false ;
+      done_auton_turning = false ;
+      done_auton_turning2 = false ;
+      done_moving = false ;
+      done_moving2 = false ;
 
     m_autoSelected = m_chooser.getSelected();
     // m_autoSelected = SmartDashboard.getString("Auto Selector", kDefaultAuto);
@@ -280,36 +344,118 @@ public class Robot extends TimedRobot {
   public void autonomousPeriodic() {
 
     switch (m_autoSelected) {
-      case kCustomAuto:
+      case Auton1:
         // Put custom auto code here
-        SmartDashboard.putString("custome code:", "custom");
+        SmartDashboard.putString("Running Auton:", "Auton-1");
+          do_auton_1() ;
         break;
 
         case kDefaultAuto:
         default:
         // Put default auto code here
-        SmartDashboard.putString("custome code:", "default");
+        SmartDashboard.putString("Running Auton:", "DEFAULT");
+          do_auton_default() ;
         break;
 
-        case blahblahblah:
-        SmartDashboard.putString("custome code:", "blah");
+        case Auton2:
+        SmartDashboard.putString("Running Auton:", "Auton-2");
+          do_auton_2() ;
+
         break ;
 
       }
 
   }
 
+
+    // -- ALL AUTON HERE:
+  public void do_auton_default() {
+    if (done_moving == false) {
+      done_moving = moveRobot(4); // go 8 feet forward from where we started.
+      return ;
+    } 
+  }
+  public void do_auton_1() {
+    tiltGoal = "low";
+    do_tilting() ;
+    if (done_moving == false) {
+      done_moving = moveRobot(5); // go X feet forward from where we started.
+      return ;
+    } 
+    if (done_auton_turning == false) {
+      done_auton_turning = gyro_turn_to(0); // adjust back to zero.
+      if (done_auton_turning == true) {
+        talonLeftDrive.setSelectedSensorPosition(0,0,30);
+        talonRightDrive.setSelectedSensorPosition(0,0,30);
+        done_auton_turning_time = myClock.get() ;
+      }
+      return ;
+    }
+    if ((myClock.get() - done_auton_turning_time) < 1) { return ;}
+
+    if (done_moving2 == false) {
+      SmartDashboard.putString("HERE:", "got here");
+      done_moving2 = moveRobot(4); // go X feet forward from where we started.
+      return ;
+    } 
+
+    if (done_auton_turning2 == false) {
+      SmartDashboard.putString("HERE2:", "got here");
+      done_auton_turning2 = gyro_turn_to(0); // adjust back to zero.
+      return ;
+    }
+    drive.arcadeDrive(.3, 0);
+    do_low_dump();
+
+  }
+
+  public void do_auton_2() {
+    tiltGoal = "angle" ;
+    tiltToAngleValue = 350 ;
+    do_tilting() ;
+    jump_backwards() ;  if (jump_backwards_finished == false) { return ;}
+    targeting = true ;
+    if (ready_to_fire == false) {
+      limelight_targeting();
+      return ;
+    }
+    run_shooter_wheels_for_shooting_out(.65);
+    dialMotor.set(-1);
+
+  }
+
+  public void do_auton_3() {
+
+  }
+
+
+  public void jump_backwards() {
+    if (jump_backwards_starttime == 0){
+      drive.arcadeDrive(-1, 0);
+      jump_backwards_starttime = myClock.get() ;
+      tiltMotor.set(.6);
+      return ;
+    }
+    if ( (myClock.get() - jump_backwards_starttime) > .3) {
+      drive.arcadeDrive(0, 0);
+      tiltMotor.set(0);
+      jump_backwards_finished = true ;
+    }
+
+  }
+
   @Override
   public void teleopInit() {
-    //    pc = new PIDController(kP,kI,kD) ;
-    double Kp = pidKpControl.getDouble(.03) ;
-    double Kd = pidKdControl.getDouble(.05) ;
-    //double Kp = .5 ;
-    double Ki = 0 ; //double Kd = 0 ;
-    SmartDashboard.putNumber("KP", Kp) ;
-    SmartDashboard.putNumber("KD", Kd) ;
-    pc = new PIDController(Kp,Ki,Kd) ;
-    gyro.reset();
+    pid_playground() ;
+    stop_low_dump() ; // from autonomous
+    //gyro.reset();
+    limelight_LED_mode(false);
+    limelight_camera_mode(true);
+    targeting=false ;
+    stop_shooter_wheels();
+    dialMotor.set(0);
+    talonLeftDrive.setSelectedSensorPosition(0,0,30);
+    talonRightDrive.setSelectedSensorPosition(0,0,30);
   }
 
   @Override
@@ -320,7 +466,12 @@ public class Robot extends TimedRobot {
       dialEncoder.reset() ;
       wheelElevatorEncoder.reset();
       zeroControl.setBoolean(false);
+      talonLeftDrive.setSelectedSensorPosition(0,0,30);
+      talonRightDrive.setSelectedSensorPosition(0,0,30);
     }
+
+//    if (joystick.getRawButton(12)) { gyro_test(); return ;}
+    //if (joystick.getRawButton(12)) {  gyro_turn_to(0);   return ; }
 
     if (usePanelControl.getBoolean(false)){ // "USE CONTROL PANEL" button is pressed.
       controlTabStuff() ;
@@ -329,22 +480,55 @@ public class Robot extends TimedRobot {
     }
 
     do_control_maps() ;
-    normal_driving();
+    limelight_targeting(); // this includes driving normally too.
+    //normal_driving();
 
 
   }
 
   // -------------------------------------------------------------
+  public void talonpidtest() {
+    //limepid.setTolerance(.01);
+    //double answerR = limepid.calculate(talonRightDrive.getSelectedSensorPosition() / 10000,1) ;
+    //double answerL = limepid.calculate(talonLeftDrive.getSelectedSensorPosition() / 10000,-1) ;
+    //SmartDashboard.putNumber("TALONSTEER:", answerR) ;
+    //SmartDashboard.putNumber("TALONSTEEL:", answerL) ;
+    if (joystick.getRawButton(11)) {
+      SmartDashboard.putString("HERE:", "got here");
+      double dist = 10000 ;
+      talonRightDrive.set(ControlMode.MotionMagic, dist);
+      talonLeftDrive.set(ControlMode.MotionMagic, dist);
+    //  talonRightDrive.set(ControlMode.MotionMagic, demand0, demand1Type, demand1);
+ /*    talonRightDrive.set(.2) ;
+    talonLeftDrive.set(.2) ;
+    talonLeftDrive.getFaults(_faults);
+    System.out.println("OUT OF PHASE:" + _faults.SensorOutOfPhase); */
+    }
+  }
+  public boolean moveRobot(double feet) {  
+    double dist = feet * 2500 ;
+    talonRightDrive.set(ControlMode.MotionMagic, dist);
+    talonLeftDrive.set(ControlMode.MotionMagic, dist);
+    if (
+        Math.abs(dist - talonRightDrive.getSelectedSensorPosition()) < 1000
+        && 
+        Math.abs(dist - talonLeftDrive.getSelectedSensorPosition()) < 1000
+       ) {
+       return true ;
+    }
+    return false ;
+  }
+
   // -------------------------------------------------------------
   public void gyro_test() {
 
-    double answer = pc.calculate(gyro.getAngle(),90) ;
+    double answer = gyroPID.calculate(gyro.getAngle(),90) ;
     SmartDashboard.putNumber("answer:", answer) ;
 
     // STRAIGHT LINE:
     //turningValue = Math.copySign(turningValue, m_joystick.getY());
     //m_myRobot.arcadeDrive(m_joystick.getY(), turningValue);
-    double extrastuff = extraControl.getDouble(.2) ;
+    double extrastuff = extraControl.getDouble(.12) ;
     SmartDashboard.putNumber("EXTRA", extrastuff) ;
     if (answer < 0) {
       drive.arcadeDrive(0, answer - extrastuff);
@@ -353,6 +537,23 @@ public class Robot extends TimedRobot {
     }
   }
   
+  public boolean gyro_turn_to(double degrees) {
+    double answer = gyroPID.calculate(gyro.getAngle(),degrees) ;
+    SmartDashboard.putNumber("turning with:", answer) ;
+    if (answer < 0) {
+      if (answer > -.21) { answer = -0.3 ;}
+      drive.arcadeDrive(0, answer);
+    } else {
+      if (answer < .21) { answer = .3 ;}
+      drive.arcadeDrive(0, answer);
+    }
+    if (  Math.abs(gyro.getAngle() - degrees) < 2) {
+      drive.arcadeDrive(0, 0);
+      SmartDashboard.putString("finished gyro turn:", "yes");
+      return true;
+    }
+    return false ;
+  }
   // -------------------------------------------------------------
   public void do_control_maps() {
 
@@ -365,6 +566,10 @@ public class Robot extends TimedRobot {
     boolean spinning_color_wheel = xbox.getRawButton(12);
     boolean shooter_wheels_out_high_manually = xbox.getRawButton(5);
     boolean intake_out = joystick.getRawButton(1);
+    boolean winch_up = xbox.getRawButton(4);
+    boolean winch_down = xbox.getRawButton(2);
+    double deploy = xbox.getRawAxis(1);
+
 
   // set an override button to go into override mode
   SmartDashboard.putBoolean("xbox override", xbox_override);
@@ -419,6 +624,7 @@ public class Robot extends TimedRobot {
         intakeMotor.set(-1);
         return ; // prevent the running of run_all_intake.
       }
+
 
         // TILTING: 
       if (tilting_to_floor == 180){
@@ -481,12 +687,40 @@ public class Robot extends TimedRobot {
       } else {
         wheelSpinnerMotor.set(0);
       }
-    }
+
+      // CLIMBING:
+      if (winch_up == true) {
+        winchMotor.set(-1) ;
+      } else if (winch_down) {
+        winchMotor.set(1);
+      } else {
+        winchMotor.set(0);
+      }
+      // DEPLOY motor.
+      if (Math.abs(deploy) > .01) {
+        if ( deploy < 0 && climbSwitch.getAverageVoltage() < 2 ) {
+          deployMotor.set(0) ;
+        } else {
+          deployMotor.set(deploy);
+        }
+      } else {
+        deployMotor.set(0) ;
+      }
+  
+
+
+    }  // END non-override mode.
+
   }
   
   // -------------------------------------------------------------
   public void intake_rollers_on() {
-    intakeMotor.set(intake_roller_speed_in) ;
+    // never run in IN unless tilt is at floor.
+    if (current_tilt_location == "floor") {
+      intakeMotor.set(intake_roller_speed_in) ;
+    } else {
+      intakeMotor.set(0);
+    }
   }
   public void intake_rollers_off() {
     intakeMotor.set(0) ;
@@ -569,7 +803,7 @@ public class Robot extends TimedRobot {
 
   public void controlTabStuff() {
 
-    if (limelightLEDControl.getBoolean(false)){
+   /* if (limelightLEDControl.getBoolean(false)){
       limelight_LED_mode(true);
     } else {
       limelight_LED_mode(false);
@@ -579,7 +813,7 @@ public class Robot extends TimedRobot {
     } else {
       limelight_camera_mode(false);
     }
-
+*/
 
     if (winchLeftControl.getBoolean(false)){
       winchMotor.set(.8) ;
@@ -893,7 +1127,7 @@ public class Robot extends TimedRobot {
     shooterWheel2.set(0) ;
   }
   public void run_shooter_wheels_for_intake() {
-    double SPEED = .65 ;
+    double SPEED = .8 ;
     shooterWheel1.set(SPEED);
     shooterWheel2.set(-SPEED) ;
   }
@@ -902,8 +1136,12 @@ public class Robot extends TimedRobot {
     shooterWheel2.set(0.8) ;
   }
   public void run_shooter_wheels_for_shooting_out_low() {
-    shooterWheel1.set(-.6);
-    shooterWheel2.set(.6) ;
+    shooterWheel1.set(-.5);
+    shooterWheel2.set(.5) ;
+  }
+  public void run_shooter_wheels_for_shooting_out(double speed){
+    shooterWheel1.set(-speed);
+    shooterWheel2.set(speed) ;
   }
   //   -------------------------------------------------------------
   public void all_values_to_dashboard() {
@@ -920,6 +1158,18 @@ public class Robot extends TimedRobot {
     SmartDashboard.putNumber("throttle:", joystick.getThrottle());
     SmartDashboard.putNumber("climb switch:", climbSwitch.getAverageVoltage());
 
+    limeXControl.setNumber(tx.getDouble(0.0));
+    limeYControl.setNumber(ty.getDouble(0.0));
+    limeTAControl.setNumber(ta.getDouble(0.0));
+    limeAControl.setNumber( table.getEntry("tv").getDouble(0.0));
+    limeTControl.setBoolean(targeting);
+
+    double Rposition = talonRightDrive.getSelectedSensorPosition();
+    double Lposition = talonLeftDrive.getSelectedSensorPosition();
+    SmartDashboard.putNumber("RIGHT POSITION:", Rposition);
+    SmartDashboard.putNumber("LEFT POSITION:", Lposition);
+    SmartDashboard.putNumber("RIGHTSPEED", talonRightDrive.getSelectedSensorVelocity()) ;
+    SmartDashboard.putNumber("LEFTSPEED", talonLeftDrive.getSelectedSensorVelocity()) ;
 
 
   }
@@ -1104,14 +1354,14 @@ public class Robot extends TimedRobot {
     limelightModeControl = Shuffleboard.getTab("LIME")
     .add("Camera Target mode switch",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(8, 2)
+    .withPosition(8, 0)
     .withSize(3, 1)
     .getEntry();
 
     limelightLEDControl = Shuffleboard.getTab("LIME")
     .add("LEDs on-off",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(8, 6)
+    .withPosition(8, 2)
     .withSize(3, 1)
     .getEntry();
 
@@ -1146,6 +1396,34 @@ public class Robot extends TimedRobot {
     .withSize(3,1)
     .getEntry();
 
+    limeYControl = Shuffleboard.getTab("LIME")
+    .add("Y:",0)
+    .withPosition(8,4)
+    .getEntry() ;
+    limeXControl = Shuffleboard.getTab("LIME")
+    .add("X:",0)
+    .withPosition(8,5)
+    .getEntry() ;
+    limeTAControl = Shuffleboard.getTab("LIME")
+    .add("TA:",0)
+    .withPosition(8,6)
+    .getEntry() ;
+    limeAControl = Shuffleboard.getTab("LIME")
+    .add("Acquired:",0)
+    .withPosition(8,7)
+    .getEntry() ;
+    limeSteerControl = Shuffleboard.getTab("LIME")
+    .add("Steer:",0)
+    .withPosition(10,6)
+    .getEntry() ;
+    limeTControl = Shuffleboard.getTab("LIME")
+    .add("targeting:",false)
+    .withPosition(10,6)
+    .withSize(3, 1)
+    .getEntry() ;
+
+
+
     pidKpControl = Shuffleboard.getTab("PID")
     .add("KP",.03)
     .getEntry() ;     
@@ -1161,8 +1439,6 @@ public class Robot extends TimedRobot {
   // -------------------------------------------------------------
   public void limelight_camera_mode(boolean CAM){
     if (CAM == true) {
-      SmartDashboard.putString("here2", "got here2");
-
       table.getEntry("camMode").setNumber(1);
       return;
     }
@@ -1170,7 +1446,6 @@ public class Robot extends TimedRobot {
   }
   public void limelight_LED_mode(boolean CAM){
     if (CAM == true) {
-      SmartDashboard.putString("here", "got here");
       table.getEntry("ledMode").setNumber(3);
       return;
     }
@@ -1203,81 +1478,76 @@ public class Robot extends TimedRobot {
 
   public void limelight_targeting() {
 
-    table.getEntry("camMode").setNumber(0);
-
     double x = tx.getDouble(0.0);
     double y = ty.getDouble(0.0);
     double area = ta.getDouble(0.0);
+    ready_to_fire = false ;
+
+    // toggle targeting mode when the button is pressed.
+    boolean targeter = joystick.getRawButtonPressed(8);
+    if (targeter == true && targeting == false){
+      targeting = true;
+    } else if (targeter == true && targeting == true) {
+      // turn it OFF
+      targeting = false ;
+      limelight_LED_mode(false);
+      limelight_camera_mode(true);
+      drive.arcadeDrive(0, 0);
+      normal_driving();
+      return ;
+    }
+
+    if (targeting == false) { normal_driving() ; return ;} // nothing to do.
+    limelight_LED_mode(true);
+    limelight_camera_mode(false);
+
+    // this indicates whether or not the limelight can see the target at all.
     double havetarget = table.getEntry("tv").getDouble(0.0);
 
-    SmartDashboard.putNumber("LL-X",x);
-    SmartDashboard.putNumber("have target", havetarget);
-    SmartDashboard.putNumber("new", table.getEntry("tx").getDouble(0));
-    SmartDashboard.putNumber("Y value", y);
-    boolean targeter = joystick.getRawButtonPressed(8);
-    if (targeter == true){
-      table.getEntry("ledMode").setNumber(3);
-      targeting = true;
-    }
-    SmartDashboard.putBoolean("targeting",targeting);
-
-    if (targeting == true && havetarget == 0){
-      drive.arcadeDrive(0, 0);
-      targeting = false;
-      table.getEntry("ledMode").setNumber(1);
-
-    }
-
-    if ( targeting == false){
+    // if you don't see the target at all, continue to allow normal driving.
+    if (havetarget == 0){
       normal_driving();
+      return ;
     }
 
-    if (havetarget == 1 && targeting == true){
-      double steer = 0;
-      if (x > 10){
-        steer = -0.6;
-      }
-      else if (x < -10){
-        steer = -0.6;
-      }
-      else if (x < 10 && x > 3){
-        steer=0.55;
-      }
-      else if (x > -10 && x < -3){
-        steer = -0.55;
-      }
-      else if ( x > -3 && x < 3 ){
-        steer = 0;
-      }
-
-        double drivespeed = 0;
-        if (area < 0.5){
-          drivespeed = 0.8;
-        }
-        else if (area > 6){
-          drivespeed = -0.8;
-        }
-        else if (area > 3 && area < 6){
-          drivespeed = -0.55;
-        }
-        else if (area > 1.5 && area < 2.4){
-          drivespeed = -0.55;
-        }
-        else if ( area > 2.4 && area < 3 ){
-          drivespeed = 0;
-        }
-        drive.arcadeDrive(drivespeed, steer);
-        if (drivespeed == 0 && steer == 0){
-          targeting = false;
-        }
   
+    // now turn toward target:
 
+    double steer = 0;
+    if (x > 10){
+      steer = 0.6;
+    }
+    else if (x < -10){
+      steer = -0.6;
+    }
+    else if (x < 10 && x > 3){
+      steer=0.45;
+    }
+    else if (x > -10 && x < -3){
+      steer = -0.45;
+    }
+    else if ( x > -3 && x < 3 ){
+      steer = 0;
+    }
+    limeSteerControl.setNumber(steer) ;
 
+    
+    drive.arcadeDrive(0, steer);
+    
 
-
+    if (steer == 0){
+      ready_to_fire = true ;
     }
 
-
+    //limepid.setTolerance(0);
+    /*
+    double answer = limepid.calculate(x,0) ;
+    SmartDashboard.putNumber("DIFF", x);
+    limeSteerControl.setNumber(answer) ;
+    if (joystick.getRawButton(7)) {
+    drive.arcadeDrive(0, -answer);
+    }
+    */
 
   }
 // -------------------------------------------------------------
@@ -1306,6 +1576,20 @@ public void do_Colors(){
       SmartDashboard.putNumber("Confidence", match.confidence);
       SmartDashboard.putString("Detected Color", colorString);
 }
+
+  
+void pid_playground() {
+  //    pc = new PIDController(kP,kI,kD) ;
+  double Kp = pidKpControl.getDouble(.03) ;
+  double Kd = pidKdControl.getDouble(.05) ;
+  //double Kp = .5 ;
+  double Ki = 0 ; //double Kd = 0 ;
+  SmartDashboard.putNumber("KP", Kp) ;
+  SmartDashboard.putNumber("KD", Kd) ;
+  //gyroPID = new PIDController(Kp,Ki,Kd) ;
+  limepid = new PIDController(Kp, Ki, Kd);
+}
+
 // -------------------------------------------------------------
 // -------------------------------------------------------------
 
