@@ -1,4 +1,4 @@
- /*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
 /* Copyright (c) 2017-2018 FIRST. All Rights Reserved.                        */
 /* Open Source Software - may be modified and shared by FRC teams. The code   */
 /* must be accompanied by the FIRST BSD license file in the root directory of */
@@ -21,16 +21,19 @@ import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.SPI;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import edu.wpi.first.wpilibj.drive.* ;
-import edu.wpi.first.wpilibj.SpeedControllerGroup ;
+import edu.wpi.first.wpilibj.drive.*;
+import edu.wpi.first.wpilibj.geometry.Pose2d;
+import edu.wpi.first.wpilibj.geometry.Rotation2d;
+import edu.wpi.first.wpilibj.kinematics.DifferentialDriveOdometry;
+import edu.wpi.first.wpilibj.SpeedControllerGroup;
 import edu.wpi.first.wpilibj.Talon;
-import edu.wpi.first.wpilibj.SpeedController ;
+import edu.wpi.first.wpilibj.SpeedController;
 import edu.wpi.first.wpilibj.Spark;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.Victor;
 import edu.wpi.first.wpilibj.Timer;
-import com.ctre.phoenix.motorcontrol.can.* ;
-import edu.wpi.first.wpilibj.AnalogInput ;
+import com.ctre.phoenix.motorcontrol.can.*;
+import edu.wpi.first.wpilibj.AnalogInput;
 import edu.wpi.first.wpilibj.livewindow.*;
 import edu.wpi.first.cameraserver.CameraServer;
 import edu.wpi.cscore.UsbCamera;
@@ -38,7 +41,7 @@ import java.util.Map;
 import edu.wpi.first.wpilibj.controller.*;
 import javax.print.attribute.standard.JobPrioritySupported;
 
-import com.ctre.phoenix.motorcontrol.* ;
+import com.ctre.phoenix.motorcontrol.*;
 import com.revrobotics.CANSparkMax;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;
 import com.revrobotics.CANEncoder;
@@ -50,7 +53,8 @@ import com.revrobotics.ColorMatchResult;
 import com.revrobotics.ColorMatch;
 import edu.wpi.first.wpilibj.I2C;
 import edu.wpi.first.wpilibj.util.Color;
-
+import edu.wpi.first.wpilibj.geometry.Transform2d;
+import edu.wpi.first.wpilibj.geometry.Translation2d;
 
 
 public class Robot extends TimedRobot {
@@ -80,7 +84,9 @@ public class Robot extends TimedRobot {
   boolean limelight_target_button = false;
   boolean xbox_override = false;
   boolean xbox_low_dump_mode_on = false ;
+  boolean xbox_low_dump_mode_on_really_fast = false;
   boolean outtake_trigger_mode = false;
+  boolean xbox_shooter_wheels_out_high_really_fast_mode = false;
   
 
   // MOTORS:
@@ -129,6 +135,13 @@ public class Robot extends TimedRobot {
   double done_auton_turning_time = 0 ;
   boolean done_auton_turning2 = false ;
   boolean ready_to_fire = false ;
+  double old_shooter_speed_1 = 0 ;
+  double old_shooter_speed_2 = 0 ;
+  double old_dial_speed = 0 ;
+  boolean continual_outtake_mode = true ;
+  boolean only_once = false ;
+  double target_found_score = 0 ; 
+  boolean target_and_fire_mode = false ;
 
   /// DIAL
   boolean move_dial_one_notch = false ;
@@ -206,6 +219,9 @@ public class Robot extends TimedRobot {
 
   Faults _faults = new Faults() ;
 
+  Pose2d mpose ;
+  DifferentialDriveOdometry od ;
+  
 
   
   @Override
@@ -309,6 +325,7 @@ talonLeftDrive.config_kD(0,D,30);
 gyroPID = new PIDController(.05,0,.01) ;
 
 
+
   }
 
 
@@ -328,17 +345,22 @@ gyroPID = new PIDController(.05,0,.01) ;
       talonRightDrive.setSelectedSensorPosition(0,0,30);
       gyro.reset();
       jump_backwards_finished = false ;
+      jump_backwards_starttime = 0 ;
       done_auton_turning = false ;
       done_auton_turning2 = false ;
       done_moving = false ;
       done_moving2 = false ;
+      //mpose = new Pose2d(); 
+      //od = new DifferentialDriveOdometry( new Rotation2d()) ;
+
 
     m_autoSelected = m_chooser.getSelected();
     // m_autoSelected = SmartDashboard.getString("Auto Selector", kDefaultAuto);
     System.out.println("Auto selected: " + m_autoSelected);
 
-  }
 
+  }
+ 
 
   @Override
   public void autonomousPeriodic() {
@@ -371,7 +393,7 @@ gyroPID = new PIDController(.05,0,.01) ;
     // -- ALL AUTON HERE:
   public void do_auton_default() {
     if (done_moving == false) {
-      done_moving = moveRobot(4); // go 8 feet forward from where we started.
+      done_moving = moveRobot(4); // go X feet forward from where we started.
       return ;
     } 
   }
@@ -411,7 +433,7 @@ gyroPID = new PIDController(.05,0,.01) ;
 
   public void do_auton_2() {
     tiltGoal = "angle" ;
-    tiltToAngleValue = 350 ;
+    tiltToAngleValue = 50 ;
     do_tilting() ;
     jump_backwards() ;  if (jump_backwards_finished == false) { return ;}
     targeting = true ;
@@ -423,22 +445,20 @@ gyroPID = new PIDController(.05,0,.01) ;
     dialMotor.set(-1);
 
   }
-
   public void do_auton_3() {
 
   }
 
 
   public void jump_backwards() {
+    if (jump_backwards_finished == true) { return ;}
     if (jump_backwards_starttime == 0){
       drive.arcadeDrive(-1, 0);
       jump_backwards_starttime = myClock.get() ;
-      tiltMotor.set(.6);
       return ;
     }
     if ( (myClock.get() - jump_backwards_starttime) > .3) {
       drive.arcadeDrive(0, 0);
-      tiltMotor.set(0);
       jump_backwards_finished = true ;
     }
 
@@ -456,21 +476,28 @@ gyroPID = new PIDController(.05,0,.01) ;
     dialMotor.set(0);
     talonLeftDrive.setSelectedSensorPosition(0,0,30);
     talonRightDrive.setSelectedSensorPosition(0,0,30);
+    
+    // CHANGE THESE BEFORE COMPETITION:
+    //run_all_intake();
+    continual_outtake_mode = false ;
+
   }
 
   @Override
   public void teleopPeriodic() {
 
+    //do_Colors();
+    // do_mpose() ;
+
+
+
     if (zeroControl.getBoolean(false)){ // zero all encoders if ZERO button pushed.
-      tiltEncoder.reset();
-      dialEncoder.reset() ;
-      wheelElevatorEncoder.reset();
-      zeroControl.setBoolean(false);
-      talonLeftDrive.setSelectedSensorPosition(0,0,30);
-      talonRightDrive.setSelectedSensorPosition(0,0,30);
+      zero_everything();
     }
 
-//    if (joystick.getRawButton(12)) { gyro_test(); return ;}
+    intake_rollers_continual_out() ; // bypass with thumb on joystick.
+
+    //    if (joystick.getRawButton(12)) { gyro_test(); return ;}
     //if (joystick.getRawButton(12)) {  gyro_turn_to(0);   return ; }
 
     if (usePanelControl.getBoolean(false)){ // "USE CONTROL PANEL" button is pressed.
@@ -480,10 +507,30 @@ gyroPID = new PIDController(.05,0,.01) ;
     }
 
     do_control_maps() ;
+
+    if (joystick.getRawButtonPressed(7)) {  // go into target and fire mode.
+        target_and_fire_mode = true ;
+        targeting = true ;
+        tiltToAngleValue = 50 ;
+        tiltGoal = "angle";
+        do_tilting() ;
+        run_shooter_wheels_for_shooting_out(.65);
+    } else if (joystick.getRawButtonReleased(7)){  // leave target and fire mode.
+        target_and_fire_mode = false ;
+        targeting = false ;
+        ready_to_fire = false ;
+        limelight_LED_mode(false);    limelight_camera_mode(true);
+        stop_shooter_wheels();
+        dialMotor.set(0);
+    } 
+    
+    if (target_and_fire_mode == true && ready_to_fire == true && current_tilt_location == "angle"){
+      // FIRE!
+      dialMotor.set(-1) ;
+    }
+
     limelight_targeting(); // this includes driving normally too.
-    //normal_driving();
-
-
+    
   }
 
   // -------------------------------------------------------------
@@ -564,7 +611,6 @@ gyroPID = new PIDController(.05,0,.01) ;
     double wheel_elevator = xbox.getRawAxis(3);
     double vertical_dial_override = xbox.getRawAxis(1);
     boolean spinning_color_wheel = xbox.getRawButton(12);
-    boolean shooter_wheels_out_high_manually = xbox.getRawButton(5);
     boolean intake_out = joystick.getRawButton(1);
     boolean winch_up = xbox.getRawButton(4);
     boolean winch_down = xbox.getRawButton(2);
@@ -581,6 +627,11 @@ gyroPID = new PIDController(.05,0,.01) ;
 
     
     if (xbox_override == true){     // override mode
+
+      // zero out all encoders:
+      if (xbox.getRawButtonPressed(9) ){
+        zero_everything();
+      }
       
       // manual override for the wheel elevator going up and down that ignores the sensor. CAREFUL!!
       if (Math.abs(wheel_elevator) > 0.05){
@@ -601,16 +652,43 @@ gyroPID = new PIDController(.05,0,.01) ;
       } else if ( vertical_dial_override < 0.05){
         tiltMotor.set(0);
       }
-      // shoot the blue wheels out and spin the dial out at the same time
-      if (shooter_wheels_out_high_manually == true){
-        shooterWheel1.set(-1);
-        shooterWheel2.set(1);
-        dialMotor.set(-1);
+
+      boolean button6pressed = xbox.getRawButtonPressed(6) ;
+      if ( button6pressed == true && xbox_low_dump_mode_on_really_fast == false){
+        xbox_low_dump_mode_on_really_fast = true ;
+      } else if (button6pressed == true) {
+        xbox_low_dump_mode_on_really_fast = false;
+        stop_low_dump_really_fast();
+      }
+      if (xbox_low_dump_mode_on_really_fast == true){
+        do_low_dump_really_fast();
+      }
+
+      boolean button8pressed = xbox.getRawButtonPressed(8) ;
+      if ( button8pressed == true && xbox_shooter_wheels_out_high_really_fast_mode == false){
+        xbox_shooter_wheels_out_high_really_fast_mode = true ;
+      } else if (button8pressed == true) {
+        xbox_shooter_wheels_out_high_really_fast_mode = false;
+        stop_shoot_out_high_really_fast();
+      }
+      if (xbox_shooter_wheels_out_high_really_fast_mode == true){
+        do_shooting_out_high_really_fast();
       }
     }
 
     // code for tilting the dial to set value
     if ( xbox_override == false){
+
+        // TILTING: 
+      if (tilting_to_floor == 180){
+        tiltGoal = "floor" ;
+      } else if ( tilting_low == 90){
+        tiltGoal = "low" ;
+      } else if (tilting_high == 0){
+        tiltGoal = "high" ;
+      } // end code for tilting dial to set value
+      do_tilting();
+
 
       // this sets the trigger on the joystick to run the intake backwards so we don't get stuck on balls
       if (intake_out == true && outtake_trigger_mode == false){
@@ -626,15 +704,29 @@ gyroPID = new PIDController(.05,0,.01) ;
       }
 
 
-        // TILTING: 
-      if (tilting_to_floor == 180){
-        tiltGoal = "floor" ;
-      } else if ( tilting_low == 90){
-        tiltGoal = "low" ;
-      } else if (tilting_high == 0){
-        tiltGoal = "high" ;
-      } // end code for tilting dial to set value
-      do_tilting();
+
+
+      // temporarily reverse the shooter wheels in case they are stuck.
+      if (joystick.getRawButtonPressed(5)) {
+        shooter_wheels_reverse_unjam() ; 
+      }
+      if (joystick.getRawButtonReleased(5)) {
+        shooter_wheels_reverse_unjam_done() ; 
+      }
+      if (joystick.getRawButton(5)) {
+        return ; // to prevent any other function from operating the wheels while we unjam.
+      }
+
+      // temporarily reverse the DIAL direction AND the shooter wheels, for when shooting is jammed.
+      if (joystick.getRawButtonPressed(6)) {
+        shooting_unjam();
+      }
+      if (joystick.getRawButtonReleased(6)) {
+        shooting_unjam_done() ; 
+      }
+      if (joystick.getRawButton(6)) {
+        return ; // to prevent any other function from operating the DIAL while we unjam.
+      }
 
 
       // hit button, all intake mechanisms will turn on, hit it again, and they will turn off
@@ -662,6 +754,7 @@ gyroPID = new PIDController(.05,0,.01) ;
         do_low_dump();
       }
        
+      
       
       // setting wheel elavator to the right joystick on the xbox controller. It's a manual up and down, with stops at the ends
       // Click joystick in to spin the wheel
@@ -725,6 +818,23 @@ gyroPID = new PIDController(.05,0,.01) ;
   public void intake_rollers_off() {
     intakeMotor.set(0) ;
   }
+  public void intake_rollers_continual_out() {
+    // if we are not on the floor, run the roller bar OUT.
+    // but this can be annoying, so allow turn off with button.
+    if (joystick.getRawButtonPressed(2)){
+      if (continual_outtake_mode == true) {
+        continual_outtake_mode = false ;
+      } else {
+        continual_outtake_mode = true ;
+      }
+    }
+    if ( continual_outtake_mode == true &&  current_tilt_location != "floor") {
+      intakeMotor.set(-.5) ; 
+    } else if (intakeMotor.get() == -.5 && continual_outtake_mode == false ){
+      intakeMotor.set(0);
+    }
+  }
+
   // -------------------------------------------------------------
   public void run_all_intake() {
     tiltGoal = "floor" ;
@@ -749,7 +859,32 @@ gyroPID = new PIDController(.05,0,.01) ;
     run_shooter_wheels_for_shooting_out_low() ;
     dialMotor.set(-1) ;
   }
+
+  public void do_low_dump_really_fast(){
+    tiltGoal = "low" ;
+    do_tilting();
+    if (current_tilt_location != "low") { return ;} // wait until tilt is correct.
+    // tilt is now OK, fire.
+    run_shooter_wheels_for_shooting_out_low_really_fast() ;
+    dialMotor.set(-1) ;
+  }
   public void stop_low_dump () {
+    dialMotor.set(0);
+    stop_shooter_wheels();
+  }
+  public void stop_low_dump_really_fast(){
+    dialMotor.set(0);
+    stop_shooter_wheels();
+  }
+  public void do_shooting_out_high_really_fast(){
+    tiltGoal = "high" ;
+    do_tilting();
+    if (current_tilt_location != "high") { return ;} // wait until tilt is correct.
+    // tilt is now OK, fire.
+    run_shooter_wheels_for_shooting_out_high_really_fast() ;
+    dialMotor.set(-1) ;
+  }
+  public void stop_shoot_out_high_really_fast(){
     dialMotor.set(0);
     stop_shooter_wheels();
   }
@@ -1038,11 +1173,11 @@ gyroPID = new PIDController(.05,0,.01) ;
       }
       // it's too high, lower it.
       if ( tiltPosition < low_goal) {
-        tiltMotor.set(.6) ;
+        tiltMotor.set(.7) ;
         return ;
       }
       if ( tiltPosition > low_goal) { // too low, raise it.
-        tiltMotor.set(-.7);
+        tiltMotor.set(-.8);
         return ;
       }
     }
@@ -1055,11 +1190,11 @@ gyroPID = new PIDController(.05,0,.01) ;
         return ;
       }
       if ( tiltPosition < floor_goal) {
-        tiltMotor.set(.6) ;
+        tiltMotor.set(.7) ;
         return ;
       }
       if ( tiltPosition > floor_goal) {
-        tiltMotor.set(-.7);
+        tiltMotor.set(-.8);
         return ;
       }
     }
@@ -1071,11 +1206,11 @@ gyroPID = new PIDController(.05,0,.01) ;
         return;
       }
       if (tiltPosition < tiltToAngleValue) {
-        tiltMotor.set(.6) ;
+        tiltMotor.set(.7) ;
         return ;
       }
       if (tiltPosition > tiltToAngleValue) {
-        tiltMotor.set(-.7) ;
+        tiltMotor.set(-.8) ;
         return;
       }
     }
@@ -1132,12 +1267,20 @@ gyroPID = new PIDController(.05,0,.01) ;
     shooterWheel2.set(-SPEED) ;
   }
   public void run_shooter_wheels_for_shooting_out_high() {
-    shooterWheel1.set(-0.8);
-    shooterWheel2.set(0.8) ;
+    shooterWheel1.set(-0.65);
+    shooterWheel2.set(0.65) ;
+  }
+  public void run_shooter_wheels_for_shooting_out_high_really_fast(){
+    shooterWheel1.set(-1);
+    shooterWheel2.set(1);
   }
   public void run_shooter_wheels_for_shooting_out_low() {
     shooterWheel1.set(-.5);
     shooterWheel2.set(.5) ;
+  }
+  public void run_shooter_wheels_for_shooting_out_low_really_fast(){
+    shooterWheel1.set(-1);
+    shooterWheel2.set(1) ;
   }
   public void run_shooter_wheels_for_shooting_out(double speed){
     shooterWheel1.set(-speed);
@@ -1146,7 +1289,7 @@ gyroPID = new PIDController(.05,0,.01) ;
   //   -------------------------------------------------------------
   public void all_values_to_dashboard() {
     SmartDashboard.putNumber("TILT:",tiltEncoder.getDistance());
-    SmartDashboard.putNumber("TILT-SPEED:",tiltEncoder.getRate());
+//    SmartDashboard.putNumber("TILT-SPEED:",tiltEncoder.getRate());
     SmartDashboard.putString("CURRENT TILT:",current_tilt_location);
  
     SmartDashboard.putNumber("DIAL:",dialEncoder.getDistance());
@@ -1487,17 +1630,18 @@ gyroPID = new PIDController(.05,0,.01) ;
     boolean targeter = joystick.getRawButtonPressed(8);
     if (targeter == true && targeting == false){
       targeting = true;
+      target_found_score = 0 ;
     } else if (targeter == true && targeting == true) {
       // turn it OFF
       targeting = false ;
-      limelight_LED_mode(false);
-      limelight_camera_mode(true);
+      limelight_LED_mode(false);       limelight_camera_mode(true);
       drive.arcadeDrive(0, 0);
       normal_driving();
       return ;
     }
 
     if (targeting == false) { normal_driving() ; return ;} // nothing to do.
+
     limelight_LED_mode(true);
     limelight_camera_mode(false);
 
@@ -1505,7 +1649,7 @@ gyroPID = new PIDController(.05,0,.01) ;
     double havetarget = table.getEntry("tv").getDouble(0.0);
 
     // if you don't see the target at all, continue to allow normal driving.
-    if (havetarget == 0){
+    if (havetarget < 1){
       normal_driving();
       return ;
     }
@@ -1527,15 +1671,16 @@ gyroPID = new PIDController(.05,0,.01) ;
       steer = -0.45;
     }
     else if ( x > -3 && x < 3 ){
+      target_found_score = target_found_score + 1 ;
       steer = 0;
+    } else {
+      target_found_score = 0 ;
     }
     limeSteerControl.setNumber(steer) ;
-
-    
     drive.arcadeDrive(0, steer);
     
 
-    if (steer == 0){
+    if (target_found_score > 30){
       ready_to_fire = true ;
     }
 
@@ -1591,6 +1736,69 @@ void pid_playground() {
 }
 
 // -------------------------------------------------------------
+public void shooter_wheels_reverse_unjam() {
+  // note what the speeds are at the beginning of unjam, so that we can set the motors back to that speed after unjam.
+  old_shooter_speed_1 = shooterWheel1.get() ;
+  old_shooter_speed_2 = shooterWheel2.get() ;
+  if (old_shooter_speed_1 > 0) {
+      shooterWheel1.set(-1) ;
+  } else if (old_shooter_speed_1 < 0) {
+    shooterWheel1.set(1) ; 
+  }
+  if (old_shooter_speed_2 > 0) {
+    shooterWheel2.set(-1) ;
+  } else if (old_shooter_speed_2 < 0) {
+    shooterWheel2.set(1) ; 
+  }
+}
+public void shooter_wheels_reverse_unjam_done() {
+  shooterWheel1.set(old_shooter_speed_1);
+  shooterWheel2.set(old_shooter_speed_2);
+}
+// -------------------------------------------------------------
+public void shooting_unjam() {
+  // note what the speeds are at the beginning of unjam, so that we can set the motors back to that speed after unjam.
+  old_dial_speed = dialMotor.get() ;
+  dialMotor.set(1) ;
+  old_shooter_speed_1 = shooterWheel1.get() ;
+  old_shooter_speed_2 = shooterWheel2.get() ;
+  shooterWheel1.set(1) ; 
+  shooterWheel2.set(-1) ; 
+
+}
+public void shooting_unjam_done() {
+  dialMotor.set(old_dial_speed);
+  shooter_wheels_reverse_unjam_done() ;
+}
+
+
+// -------------------------------------------------------------
+public void do_mpose() {
+  var gyroAngle = Rotation2d.fromDegrees(-gyro.getAngle());
+  mpose = od.update(gyroAngle, 
+    talonLeftDrive.getSelectedSensorPosition()  , 
+    talonRightDrive.getSelectedSensorPosition() 
+    ) ;
+
+  SmartDashboard.putString("MPOSE:", mpose.toString()) ;
+  Translation2d t2d = mpose.getTranslation();
+  double theX = t2d.getX() ;
+  double theY = t2d.getY() ;
+  SmartDashboard.putNumber("THEX", theX) ;
+  }
+
+
+// -------------------------------------------------------------
+// -------------------------------------------------------------
+
+public void zero_everything() {
+  tiltEncoder.reset();
+  dialEncoder.reset() ;
+  wheelElevatorEncoder.reset();
+  zeroControl.setBoolean(false);
+  talonLeftDrive.setSelectedSensorPosition(0,0,30);
+  talonRightDrive.setSelectedSensorPosition(0,0,30);
+}
 // -------------------------------------------------------------
 
 
