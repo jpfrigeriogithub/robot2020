@@ -62,6 +62,7 @@ public class Robot extends TimedRobot {
   private static final String Auton2 = "Auton-2";
   private static final String Auton1 = "Auton-1";
   private static final String Auton3 = "Auton-3";
+  private static final String Auton4 = "Auton-4";
   private String m_autoSelected;
   private final SendableChooser<String> m_chooser = new SendableChooser<>();
 
@@ -150,6 +151,10 @@ public class Robot extends TimedRobot {
   double target_found_distance_score = 0 ; 
   boolean target_and_fire_mode = false ;
   double ball_count = 0 ;
+  boolean limelightLEFT = true ;
+  double gyro_turn_minspeed = .35 ;
+  double auton_started_firing_time = 0 ;
+
 
   // MPOSE
   boolean mpose_turn_1_done = false ;
@@ -262,6 +267,7 @@ public class Robot extends TimedRobot {
     m_chooser.addOption("Auton1", Auton1);
     m_chooser.addOption("Auton2", Auton2);
     m_chooser.addOption("Auton3", Auton3);
+    m_chooser.addOption("Auton4", Auton4);
     SmartDashboard.putData("Auto choices", m_chooser);
 
 
@@ -375,6 +381,12 @@ mpose = new Pose2d();
       SmartDashboard.putString("MPOSE STATUS", "not started");
       do_mpose_init() ;
 
+      target_found_score = 0 ;
+      target_found_distance_score = 0 ;
+      limelight_LED_mode(true);    limelight_camera_mode(false);
+      continual_outtake_mode = true ;
+
+
     m_autoSelected = m_chooser.getSelected();
     // m_autoSelected = SmartDashboard.getString("Auto Selector", kDefaultAuto);
     System.out.println("Auto selected: " + m_autoSelected);
@@ -409,6 +421,12 @@ mpose = new Pose2d();
         case Auton3:
         SmartDashboard.putString("Running Auton:", "Auton-3");
           do_auton_3() ;
+
+        break ;
+
+        case Auton4:
+        SmartDashboard.putString("Running Auton:", "Auton-3");
+          do_auton_4() ;
 
         break ;
 
@@ -462,6 +480,8 @@ mpose = new Pose2d();
     tiltGoal = "angle" ;
     tiltToAngleValue = 0 ;
     do_tilting() ;
+    if (current_tilt_location != "floor") { intakeMotor.set(-.7);}
+
     //jump_backwards() ;  if (jump_backwards_finished == false) { return ;}
    //  jump_forwards() ;  if (jump_forwards_finished == false) { return ;}
     targeting = true ;
@@ -475,21 +495,110 @@ mpose = new Pose2d();
   }
   public void do_auton_3() {
 
-    tiltGoal = "floor";
-    //do_tilting() ;
+    jump_forwards() ;  if (jump_forwards_finished == false) { return ;}
 
+    if (current_tilt_location != "floor") { intakeMotor.set(-.7);}
+
+    targeting = true ;
+    if (done_auton_turning == false ) {
+      done_auton_turning = gyro_turn_to(-23) ;
+      return ;
+    }
+
+    run_shooter_wheels_for_shooting_out(.65);
+    if (ready_to_fire == false) {
+      limelight_targeting_right();
+      auton_started_firing_time = myClock.get() ;
+      return ;
+    }
+    if ( (myClock.get() - auton_started_firing_time) < 2) {
+      dialMotor.set(-1);
+      return ;
+    }
+    if ( (myClock.get() - auton_started_firing_time) < 3) {
+      dialMotor.set(0) ;
+      stop_shooter_wheels();
+    }
+
+    
     if (auton_mpose_1 == false) {
-      auton_mpose_1 = do_mpose(-20124,-24881) ;
+      auton_mpose_1 = do_mpose(-21591,-2748) ;
       if (auton_mpose_1 == true) {
         mpose_turn_1_done = false ;
       }
       return ;
     } 
 
-   run_all_intake();
+      // turn south
+    if (done_auton_turning2 == false ) {
+      done_auton_turning2 = gyro_turn_to(180) ;
+      return ;
+    }
+
+    run_all_intake();
+
     if (current_tilt_location != "floor"){
       return ;
     } 
+
+    /*
+    if (auton_mpose_2 == false) {
+      auton_mpose_2 = do_mpose(-10000,-10200) ;
+      return ;
+    }
+*/
+      SmartDashboard.putString("AUTON:", "arrivedddd");
+  }
+
+  public void do_auton_4() {
+
+    jump_forwards() ;  if (jump_forwards_finished == false) { return ;}
+
+    if (current_tilt_location != "floor") { intakeMotor.set(-.7);}
+
+    targeting = true ;
+    if (done_auton_turning == false ) {
+      done_auton_turning = gyro_turn_to(23) ;
+      return ;
+    }
+
+    run_shooter_wheels_for_shooting_out(.65);
+    if (ready_to_fire == false) {
+      limelight_targeting_left();
+      auton_started_firing_time = myClock.get() ;
+      return ;
+    }
+    if ( (myClock.get() - auton_started_firing_time) < 2) {
+      dialMotor.set(-1);
+      return ;
+    }
+    if ( (myClock.get() - auton_started_firing_time) < 3) {
+      dialMotor.set(0) ;
+      stop_shooter_wheels();
+    }
+
+    
+    if (auton_mpose_1 == false) {
+      auton_mpose_1 = do_mpose(-23645,22175) ;
+      if (auton_mpose_1 == true) {
+        mpose_turn_1_done = false ;
+      }
+      return ;
+    } 
+
+      // turn south
+    if (done_auton_turning2 == false ) {
+      done_auton_turning2 = gyro_turn_to(-120) ;
+      return ;
+    }
+
+    run_all_intake();
+    
+    if (current_tilt_location != "floor"){
+      return ;
+    } 
+
+    //drive.arcadeDrive(.3, 0);
 
     /*
     if (auton_mpose_2 == false) {
@@ -508,7 +617,7 @@ mpose = new Pose2d();
       jump_backwards_starttime = myClock.get() ;
       return ;
     }
-    if ( (myClock.get() - jump_backwards_starttime) > .3) {
+    if ( (myClock.get() - jump_backwards_starttime) > .2) {
       drive.arcadeDrive(0, 0);
       jump_backwards_finished = true ;
     }
@@ -547,10 +656,16 @@ mpose = new Pose2d();
     SmartDashboard.putString("MPOSE STATUS", "not started");
     do_mpose_init() ;
 
+    target_and_fire_mode = false ;
+    targeting = false ;
+    ready_to_fire = false ;
+    stop_shooter_wheels();
+    dialMotor.set(0);
+    drive.arcadeDrive(0, 0);
 
-    // CHANGE THESE BEFORE COMPETITION:
-    intake_mode_xbox_on = false ;
-    continual_outtake_mode = false ;
+    // CHANGE THESE BEFORE COMPETITION: uncomment
+    intake_mode_xbox_on = true ;
+    continual_outtake_mode = true ;
 
   }
 
@@ -559,13 +674,12 @@ mpose = new Pose2d();
 
     //do_Colors();
    do_mpose_update() ;
-    //if (joystick.getRawButton(10)) { return ;}
 
     if (zeroControl.getBoolean(false)){ // zero all encoders if ZERO button pushed.
       zero_everything();
     }
 
-    intake_rollers_continual_out() ; // bypass with thumb on joystick
+    //intake_rollers_continual_out() ; // bypass with thumb on joystick
 
     if (usePanelControl.getBoolean(false)){ // "USE CONTROL PANEL" button is pressed.
       controlTabStuff() ;
@@ -575,26 +689,29 @@ mpose = new Pose2d();
 
     do_control_maps() ;
 
-    do_target_and_fire_mode_stuff() ;
 
-    limelight_targeting_left(); // this includes driving normally too.
-    limelight_targeting_right();
-  }
-
-  // -------------------------------------------------------------
-    // -------------------------------------------------------------
-  // -------------------------------------------------------------
-  // -------------------------------------------------------------
+    if (joystick.getRawButtonPressed(8) == true) {
+      limelightLEFT = true ;
+    } else if (joystick.getRawButtonPressed(12) == true){ // RIGHT!
+      limelightLEFT = false ;
+    }
+    SmartDashboard.putBoolean("TARGET-which-way:", limelightLEFT);
 
 
-  public void do_target_and_fire_mode_stuff() {
+
+
     if (joystick.getRawButtonPressed(7)) {  // go into target and fire mode.
+        ready_to_fire = false ;
         target_and_fire_mode = true ;
         targeting = true ;
         tiltToAngleValue = 0 ;
         tiltGoal = "angle";
         do_tilting() ;
         run_shooter_wheels_for_shooting_out(.65);
+        target_found_score = 0 ;
+        target_found_distance_score = 0 ;
+        limelight_LED_mode(true);    limelight_camera_mode(false);
+
     } else if (joystick.getRawButtonReleased(7)){  // leave target and fire mode.
         target_and_fire_mode = false ;
         targeting = false ;
@@ -602,12 +719,28 @@ mpose = new Pose2d();
         limelight_LED_mode(false);    limelight_camera_mode(true);
         stop_shooter_wheels();
         dialMotor.set(0);
+        drive.arcadeDrive(0, 0);
     } 
-    
-    if (target_and_fire_mode == true && ready_to_fire == true && current_tilt_location == "angle"){
-      // FIRE!
-      dialMotor.set(-1) ;
+
+
+    if (targeting == true) {  
+        if (limelightLEFT == true) {
+          limelight_targeting_left();
+        } else {
+          limelight_targeting_right();
+        }
+        //SmartDashboard.putBoolean("RTF:", ready_to_fire) ;
+        //SmartDashboard.putNumber("TFS:", target_found_score) ;
+        //SmartDashboard.putNumber("TFDS:", target_found_distance_score) ;
+        if (target_and_fire_mode == true && ready_to_fire == true && current_tilt_location == "angle"){
+          // FIRE!
+          dialMotor.set(-1) ;
+        }
+
+    } else { // we are NOT targeting:
+      normal_driving() ;
     }
+    
     
   }
 
@@ -673,11 +806,14 @@ mpose = new Pose2d();
     double answer = gyroPID.calculate(gyro.getAngle(),degrees) ;
     double diff = Math.abs(gyro.getAngle() - degrees) ;
    SmartDashboard.putString("turnto:", "DEG:" + degrees + " diff:" + diff + " ans:" + answer);
+   if (talonRightDrive.getSelectedSensorVelocity() < 50) {
+     gyro_turn_minspeed = gyro_turn_minspeed + .01 ;
+   }
     if (answer < 0) {
-      if (answer > -.2) { answer = -0.45;}
+      if (answer > -gyro_turn_minspeed) { answer = -gyro_turn_minspeed;}
       drive.arcadeDrive(0, answer);
     } else {
-      if (answer < .2) { answer = .45 ;}
+      if (answer < gyro_turn_minspeed) { answer = gyro_turn_minspeed ;}
       drive.arcadeDrive(0, answer);
     }
     if (  Math.abs(gyro.getAngle() - degrees) < 2) {
@@ -784,7 +920,7 @@ mpose = new Pose2d();
       } else if (joystick.getRawButtonReleased(1) == true )  {
         intakeMotor.set(0);
         outtake_trigger_mode = false;
-        return ;
+        //return ;
       }
       if (outtake_trigger_mode == true) {
         intakeMotor.set(-1);
@@ -819,17 +955,24 @@ mpose = new Pose2d();
 
 
       // hit button, all intake mechanisms will turn on, hit it again, and they will turn off
-      boolean button7pressed = xbox.getRawButtonPressed(7) ;
-      if ( button7pressed == true && intake_mode_xbox_on == false){
-        intake_mode_xbox_on = true ;
+       boolean button7pressed = xbox.getRawButtonPressed(7) ;
+      if ( button7pressed == true){
         ball_count = 1 ;
-      } else if (button7pressed == true) {
+      }
+      
+      if (xbox.getRawButton(7)){
+        run_all_intake();
+        intake_mode_xbox_on = true ;
+        //ball_count = 1 ;
+      } 
+      if (xbox.getRawButtonReleased(7) == true) {
         intake_mode_xbox_on = false;
         stop_all_intake();
       }
-      if (intake_mode_xbox_on == true) {
-        run_all_intake();
-      }
+
+      //   if (intake_mode_xbox_on == true) {
+   //     run_all_intake();
+    //  }
 
 
       // hit button, low dump mode will turn on, hit button again, low dump mode will turn off
@@ -901,9 +1044,9 @@ mpose = new Pose2d();
     // never run in IN unless tilt is at floor.
     if (current_tilt_location == "floor") {
       intakeMotor.set(intake_roller_speed_in) ;
-    } else {
-      intakeMotor.set(0);
-    }
+    } //else {
+      //intakeMotor.set(0);
+    //}
   }
   public void intake_rollers_off() {
     intakeMotor.set(0) ;
@@ -914,15 +1057,16 @@ mpose = new Pose2d();
     if (joystick.getRawButtonPressed(2)){
       if (continual_outtake_mode == true) {
         continual_outtake_mode = false ;
+        intakeMotor.set(0);
       } else {
         continual_outtake_mode = true ;
       }
     }
+
     if ( continual_outtake_mode == true &&  current_tilt_location != "floor") {
-      intakeMotor.set(-.5) ; 
-    } else if (intakeMotor.get() == -.5 && continual_outtake_mode == false ){
-      intakeMotor.set(0);
-    }
+      intakeMotor.set(-.4) ; 
+
+    } 
   }
 
   // -------------------------------------------------------------
@@ -1721,37 +1865,11 @@ mpose = new Pose2d();
     double x = tx.getDouble(0.0);
     double y = ty.getDouble(0.0);
     double area = ta.getDouble(0.0);
-    ready_to_fire = false ;
-
-    // toggle targeting mode when the button is pressed.
-    boolean targeter = joystick.getRawButtonPressed(7); // this code is for targeting from the left side of the target
-    if (targeter == true && targeting == false){
-      targeting = true;
-      target_found_score = 0 ;
-      target_found_distance_score = 0 ;
-    } else if (targeter == true && targeting == true) {
-      // turn it OFF
-      targeting = false ;
-      limelight_LED_mode(false);       limelight_camera_mode(true);
-      drive.arcadeDrive(0, 0);
-      normal_driving();
-      return ;
-    }
-
-    if (targeting == false) { normal_driving() ; return ;} // nothing to do.
-
-    limelight_LED_mode(true);
-    limelight_camera_mode(false);
-
     // this indicates whether or not the limelight can see the target at all.
     double havetarget = table.getEntry("tv").getDouble(0.0);
 
-    // if you don't see the target at all, continue to allow normal driving.
-    if (havetarget < 1){
-      normal_driving();
-      return ;
-    }
-
+    // if you don't see the target at all, do nothing.
+    if (havetarget < 1){  drive.arcadeDrive(0, 0);  return ; }
   
     // now turn toward target:
 
@@ -1762,72 +1880,59 @@ mpose = new Pose2d();
     else if (x < -10){
       steer = -0.6;
     }
-    else if (x < 10 && x > -0.1){
+    else if (x < 10 && x > 1){
       steer=0.5;
     }
-    else if (x < -0.1 && x > -0.5){
+    else if (x < 1 && x > 0){
       steer = 0.4;
     }
-    else if (x > -10 && x < -1.9){
+    else if (x > -10 && x < -3){
       steer = -0.5;
     }
-    else if (x < -1.9 && x > -1.3){
+    else if (x > -3 && x < -2){
       steer = 0.4;
     }
 
-    else if ( x > -1.3 && x < -0.5 ){
+    else if ( x > -2 && x < 0 ){
       target_found_score = target_found_score + 1 ;
       steer = 0;
     } else {
       target_found_score = 0 ;
     }
-    limeSteerControl.setNumber(steer) ;
-    
-
-    
+   
 
     double straight = 0;
     if (area > 4){
-      straight = -0.6;
+      straight = -0.7;
     }
     else if (area > 2.8 && area < 4){
-      straight = -0.5;
+      straight = -0.6;
     }
     else if (area < 1){
-      straight = 0.6;
+      straight = 0.7;
     }
     else if (area < 2 && area > 1){
-      straight = 0.5;
+      straight = 0.6;
     }
     else if (area < 2.5 && area > 2){
-      straight = 0.45;
+      straight = 0.5;
     }
 
-    else if ( area > 2.5 && x < 2.8 ){
+    else if ( area > 2.5 && area < 2.8 ){
       target_found_distance_score = target_found_distance_score + 1 ;
       straight = 0;
     } else {
       target_found_distance_score = 0 ;
     }
     
-    
-    limeSteerControl.setNumber(straight) ;
     drive.arcadeDrive(straight, steer);
     
 
-    if (target_found_score > 50 && target_found_distance_score > 50){
+    if (target_found_score > 40 && target_found_distance_score > 40){
       ready_to_fire = true ;
     }
 
-    //limepid.setTolerance(0);
-    /*
-    double answer = limepid.calculate(x,0) ;
-    SmartDashboard.putNumber("DIFF", x);
-    limeSteerControl.setNumber(answer) ;
-    if (joystick.getRawButton(7)) {
-    drive.arcadeDrive(0, -answer);
-    }
-    */
+ 
 
   }
   public void limelight_targeting_right() {
@@ -1835,40 +1940,13 @@ mpose = new Pose2d();
     double x = tx.getDouble(0.0);
     double y = ty.getDouble(0.0);
     double area = ta.getDouble(0.0);
-    ready_to_fire = false ;
-
-    // toggle targeting mode when the button is pressed.
-    boolean targeter = joystick.getRawButtonPressed(11); // this code is for targeting from the left side of the target
-    if (targeter == true && targeting == false){
-      targeting = true;
-      target_found_score = 0 ;
-      target_found_distance_score = 0 ;
-    } else if (targeter == true && targeting == true) {
-      // turn it OFF
-      targeting = false ;
-      limelight_LED_mode(false);       limelight_camera_mode(true);
-      drive.arcadeDrive(0, 0);
-      normal_driving();
-      return ;
-    }
-
-    if (targeting == false) { normal_driving() ; return ;} // nothing to do.
-
-    limelight_LED_mode(true);
-    limelight_camera_mode(false);
-
     // this indicates whether or not the limelight can see the target at all.
     double havetarget = table.getEntry("tv").getDouble(0.0);
 
-    // if you don't see the target at all, continue to allow normal driving.
-    if (havetarget < 1){
-      normal_driving();
-      return ;
-    }
+    // if you don't see the target at all, do nothing.
+    if (havetarget < 1){  drive.arcadeDrive(0, 0);  return ; }
 
-  
     // now turn toward target:
-
     double steer = 0;
     if (x > 12){
       steer = 0.6;
@@ -1892,11 +1970,8 @@ mpose = new Pose2d();
     } else {
       target_found_score = 0 ;
     }
-    limeSteerControl.setNumber(steer) ;
+    //limeSteerControl.setNumber(steer) ;
     
-
-    
-
     double straight = 0;
     if (area > 4){
       straight = -0.7;
@@ -1917,7 +1992,7 @@ mpose = new Pose2d();
       straight = 0.5;
     }
 
-    else if ( area > 2.3 && x < 2.7 ){
+    else if ( area > 2.3 && area < 2.7 ){
       target_found_distance_score = target_found_distance_score + 1 ;
       straight = 0;
     } else {
@@ -1925,23 +2000,13 @@ mpose = new Pose2d();
     }
     
     
-    limeSteerControl.setNumber(straight) ;
+    //limeSteerControl.setNumber(straight) ;
     drive.arcadeDrive(straight, steer);
     
 
-    if (target_found_score > 50 && target_found_distance_score > 50){
+    if (target_found_score > 40 && target_found_distance_score > 40){
       ready_to_fire = true ;
     }
-
-    //limepid.setTolerance(0);
-    /*
-    double answer = limepid.calculate(x,0) ;
-    SmartDashboard.putNumber("DIFF", x);
-    limeSteerControl.setNumber(answer) ;
-    if (joystick.getRawButton(7)) {
-    drive.arcadeDrive(0, -answer);
-    }
-    */
 
   }
 // -------------------------------------------------------------
