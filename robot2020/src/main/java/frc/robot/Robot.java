@@ -885,7 +885,8 @@ mpose = new Pose2d();
       if (xbox_low_dump_mode_on_really_fast == true){
         do_low_dump_really_fast();
       }
-
+      
+      /*
       boolean button8pressed = xbox.getRawButtonPressed(8) ;
       if ( button8pressed == true && xbox_shooter_wheels_out_high_really_fast_mode == false){
         xbox_shooter_wheels_out_high_really_fast_mode = true ;
@@ -896,6 +897,8 @@ mpose = new Pose2d();
       if (xbox_shooter_wheels_out_high_really_fast_mode == true){
         do_shooting_out_high_really_fast();
       }
+      */
+
     }
 
 
@@ -977,7 +980,7 @@ mpose = new Pose2d();
 
       // hit button, low dump mode will turn on, hit button again, low dump mode will turn off
       boolean button6pressed = xbox.getRawButtonPressed(6) ;
-      if ( button6pressed == true && xbox_low_dump_mode_on == false){
+   /*   if ( button6pressed == true && xbox_low_dump_mode_on == false){
         xbox_low_dump_mode_on = true ;
       } else if (button6pressed == true) {
         xbox_low_dump_mode_on = false;
@@ -985,8 +988,26 @@ mpose = new Pose2d();
       }
       if (xbox_low_dump_mode_on == true){
         do_low_dump();
+      } */
+      if (xbox.getRawButton(6) == true) {
+        do_low_dump();
+        xbox_low_dump_mode_on = true ;
+      }
+      if (xbox.getRawButtonReleased(6) == true){
+        stop_low_dump();
+        xbox_low_dump_mode_on = false ;
       }
        
+      
+      
+      if ( xbox.getRawButton(8) == true) {
+        xbox_shooter_wheels_out_high_really_fast_mode = true ;
+        do_shooting_out_high_really_fast();
+      } 
+      if(xbox.getRawButtonReleased(8)) {
+        xbox_shooter_wheels_out_high_really_fast_mode = false;
+        stop_shoot_out_high_really_fast();
+      }
       
       
       // setting wheel elavator to the right joystick on the xbox controller. It's a manual up and down, with stops at the ends
@@ -1403,7 +1424,7 @@ mpose = new Pose2d();
     }
 
     if (tiltGoal == "low") {
-      if (  Math.abs( low_goal - tiltPosition) < 30) {
+      if (  Math.abs( low_goal - tiltPosition) < 15) {
         current_tilt_location = "low";
         tiltMotor.set(0);
         return ;
@@ -1516,8 +1537,8 @@ mpose = new Pose2d();
     shooterWheel2.set(0.65);
   }
   public void run_shooter_wheels_for_shooting_out_low() {
-    shooterWheel1.set(-.5);
-    shooterWheel2.set(.5) ;
+    shooterWheel1.set(-.3);
+    shooterWheel2.set(.3) ;
   }
   public void run_shooter_wheels_for_shooting_out_low_really_fast(){
     shooterWheel1.set(-1);
