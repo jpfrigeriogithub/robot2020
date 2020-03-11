@@ -697,47 +697,20 @@ mpose = new Pose2d();
 
     do_control_maps() ;
 
-    if (joystick.getRawButtonPressed(12) == true){
-      limepid_x_score = 0 ;
-      limepid_distance_score = 0 ;
-      ready_to_fire = false;
-      limelight_LED_mode(true);    limelight_camera_mode(false);
-    }
-    if (joystick.getRawButtonReleased(12) == true){
-   //   limelight_LED_mode(false);    limelight_camera_mode(true);
-    }
-    if (joystick.getRawButton(12) == true){
-      //limepidtargeting(0,0) ;
-      limepidtargeting(2.5,2.8) ;
-      return ;
-    }
-
-
-      // switch back and forth between left and right targeting.
-    if (joystick.getRawButtonPressed(8) == true) {
-      limelightLEFT = true ;
-    } else if (joystick.getRawButtonPressed(12) == true){ // RIGHT!
-      limelightLEFT = false ;
-    }
-   // SmartDashboard.putBoolean("TARGET-which-way:", limelightLEFT);
-
 
 
 
     if (joystick.getRawButtonPressed(7)) {  // go into target and fire mode.
-        ready_to_fire = false ;
-        target_and_fire_mode = true ;
-        targeting = true ;
-        tiltToAngleValue = 0 ;
-        tiltGoal = "angle";
-        do_tilting_pid() ;
-        run_shooter_wheels_for_shooting_out(.65);
-        target_found_score = 0 ;
-        target_found_distance_score = 0 ;
-        limelight_LED_mode(true);    limelight_camera_mode(false);
+      limepid_x_score = 0 ;
+      limepid_distance_score = 0 ;
+      ready_to_fire = false;
+      tiltToAngleValue = 0 ;
+      tiltGoal = "angle";
+      do_tilting_pid() ;
+      run_shooter_wheels_for_shooting_out(.65);
+      limelight_LED_mode(true);    limelight_camera_mode(false);
 
     } else if (joystick.getRawButtonReleased(7)){  // leave target and fire mode.
-        target_and_fire_mode = false ;
         targeting = false ;
         ready_to_fire = false ;
         limelight_LED_mode(false);    limelight_camera_mode(true);
@@ -745,23 +718,15 @@ mpose = new Pose2d();
         dialMotor.set(0);
         drive.arcadeDrive(0, 0);
     } 
-
-
-    if (targeting == true) {  
-        if (limelightLEFT == true) {
-          limelight_targeting_left();
-        } else {
-          limelight_targeting_right();
-        }
-        //SmartDashboard.putBoolean("RTF:", ready_to_fire) ;
-        //SmartDashboard.putNumber("TFS:", target_found_score) ;
-        //SmartDashboard.putNumber("TFDS:", target_found_distance_score) ;
-        if (target_and_fire_mode == true && ready_to_fire == true && current_tilt_location == "angle"){
-          // FIRE!
+    if (joystick.getRawButton(7) == true ) {   // do stuff DURING target-and-fire mode.
+      do_tilting_pid() ;
+      limepidtargeting(2.5,2.8) ;
+      //SmartDashboard.putBoolean("RTF:", ready_to_fire) ;
+      if (ready_to_fire == true && current_tilt_location == "angle"){ // FIRE!
           dialMotor.set(-1) ;
-        }
+      }
 
-    } else { // we are NOT targeting:
+    } else { // we are NOT targeting:  button 7 is NOT pushed.
       normal_driving() ;
     }
     
@@ -2027,9 +1992,7 @@ mpose = new Pose2d();
     }
 
 
-    if (joystick.getRawButton(11) == false) {
-      return ; 
-    }
+    //if (joystick.getRawButton(11) == false) {       return ;     }
 
     // TURNING:
     double turnspeed ;
