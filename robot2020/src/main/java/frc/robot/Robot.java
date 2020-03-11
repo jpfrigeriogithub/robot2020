@@ -30,6 +30,7 @@ import edu.wpi.first.wpilibj.Talon;
 import edu.wpi.first.wpilibj.SpeedController;
 import edu.wpi.first.wpilibj.Spark;
 import edu.wpi.first.wpilibj.XboxController;
+import edu.wpi.first.wpilibj.GenericHID.RumbleType;
 import edu.wpi.first.wpilibj.Victor;
 import edu.wpi.first.wpilibj.Timer;
 import com.ctre.phoenix.motorcontrol.can.*;
@@ -81,6 +82,7 @@ public class Robot extends TimedRobot {
   PIDController gyroPID ;
   PIDController limepid ;
   PIDController drivepid ;
+  PIDController tiltpid ;
 
   
   boolean targeting = false;
@@ -153,6 +155,10 @@ public class Robot extends TimedRobot {
   double ball_count = 0 ;
   boolean limelightLEFT = true ;
   double gyro_turn_minspeed = .35 ;
+  double lime_turn_minspeed = .25 ;
+  double lime_turn_speed = .55 ;
+  double limepid_x_score = 0 ;
+  double limepid_distance_score = 0 ;
   double auton_started_firing_time = 0 ;
 
 
@@ -345,6 +351,7 @@ talonLeftDrive.config_kI(0,I,30);
 talonLeftDrive.config_kD(0,D,30);
 
 gyroPID = new PIDController(.05,0,.01) ;
+tiltpid = new PIDController(.03,0,0) ;
 mpose = new Pose2d(); 
 
 
@@ -444,7 +451,7 @@ mpose = new Pose2d();
   }
   public void do_auton_1() {
     tiltGoal = "low";
-    do_tilting() ;
+    do_tilting_pid() ;
     if (done_moving == false) {
       done_moving = moveRobot(5); // go X feet forward from where we started.
       return ;
@@ -479,7 +486,7 @@ mpose = new Pose2d();
   public void do_auton_2() {
     tiltGoal = "angle" ;
     tiltToAngleValue = 0 ;
-    do_tilting() ;
+    do_tilting_pid() ;
     if (current_tilt_location != "floor") { intakeMotor.set(-.7);}
 
     //jump_backwards() ;  if (jump_backwards_finished == false) { return ;}
@@ -675,6 +682,7 @@ mpose = new Pose2d();
     //do_Colors();
    do_mpose_update() ;
 
+
     if (zeroControl.getBoolean(false)){ // zero all encoders if ZERO button pushed.
       zero_everything();
     }
@@ -689,13 +697,29 @@ mpose = new Pose2d();
 
     do_control_maps() ;
 
+    if (joystick.getRawButtonPressed(12) == true){
+      limepid_x_score = 0 ;
+      limepid_distance_score = 0 ;
+      ready_to_fire = false;
+      limelight_LED_mode(true);    limelight_camera_mode(false);
+    }
+    if (joystick.getRawButtonReleased(12) == true){
+   //   limelight_LED_mode(false);    limelight_camera_mode(true);
+    }
+    if (joystick.getRawButton(12) == true){
+      //limepidtargeting(0,0) ;
+      limepidtargeting(2.5,2.8) ;
+      return ;
+    }
 
+
+      // switch back and forth between left and right targeting.
     if (joystick.getRawButtonPressed(8) == true) {
       limelightLEFT = true ;
     } else if (joystick.getRawButtonPressed(12) == true){ // RIGHT!
       limelightLEFT = false ;
     }
-    SmartDashboard.putBoolean("TARGET-which-way:", limelightLEFT);
+   // SmartDashboard.putBoolean("TARGET-which-way:", limelightLEFT);
 
 
 
@@ -706,7 +730,7 @@ mpose = new Pose2d();
         targeting = true ;
         tiltToAngleValue = 0 ;
         tiltGoal = "angle";
-        do_tilting() ;
+        do_tilting_pid() ;
         run_shooter_wheels_for_shooting_out(.65);
         target_found_score = 0 ;
         target_found_distance_score = 0 ;
@@ -914,7 +938,7 @@ mpose = new Pose2d();
       } else if (tilting_high == 0){
         tiltGoal = "high" ;
       } // end code for tilting dial to set value
-      do_tilting();
+      do_tilting_pid();
 
 
       // this sets the trigger on the joystick to run the intake backwards so we don't get stuck on balls
@@ -1093,7 +1117,7 @@ mpose = new Pose2d();
   // -------------------------------------------------------------
   public void run_all_intake() {
     tiltGoal = "floor" ;
-    do_tilting();
+    do_tilting_pid();
     intake_rollers_on() ;
     run_shooter_wheels_for_intake() ;
     dial_by_sensor() ;
@@ -1108,7 +1132,7 @@ mpose = new Pose2d();
   // ----------------------------------------
   public void do_low_dump() {
     tiltGoal = "low" ;
-    do_tilting();
+    do_tilting_pid();
     if (current_tilt_location != "low") { return ;} // wait until tilt is correct.
     // tilt is now OK, fire.
     run_shooter_wheels_for_shooting_out_low() ;
@@ -1117,7 +1141,7 @@ mpose = new Pose2d();
 
   public void do_low_dump_really_fast(){
     tiltGoal = "low" ;
-    do_tilting();
+    do_tilting_pid();
     if (current_tilt_location != "low") { return ;} // wait until tilt is correct.
     // tilt is now OK, fire.
     run_shooter_wheels_for_shooting_out_low_really_fast() ;
@@ -1133,7 +1157,7 @@ mpose = new Pose2d();
   }
   public void do_shooting_out_high_really_fast(){
     tiltGoal = "high" ;
-    do_tilting();
+    do_tilting_pid();
     if (current_tilt_location != "high") { return ;} // wait until tilt is correct.
     // tilt is now OK, fire.
     run_shooter_wheels_for_shooting_out_high_really_fast() ;
@@ -1225,13 +1249,7 @@ mpose = new Pose2d();
     }
 
 
-    /*
-    double deploySpeed = deployControl.getDouble(0) ;
-    if (Math.abs(deploySpeed) > .05 ) {
-      deployMotor.set(deploySpeed);
-    } else {
-      deployMotor.set(0) ;
-    } */
+  
 
     if (colorWheelSpinControl.getBoolean(false)) {
       wheelSpinnerMotor.set(.7) ;
@@ -1347,11 +1365,11 @@ mpose = new Pose2d();
    
     // manual tilt:
     if (tiltMotorLeftControl.getBoolean(false)){
-      tiltMotor.set(.5);
+      tiltMotor.set(.7);
       tiltGoal = "" ;
       doing_manual_tilt = true ;
     } else if (tiltMotorRightControl.getBoolean(false)){
-      tiltMotor.set(-.5);
+      tiltMotor.set(-.7);
       tiltGoal = "" ;
       doing_manual_tilt = true ;
     } else {
@@ -1359,7 +1377,8 @@ mpose = new Pose2d();
         doing_manual_tilt = false ;
         tiltMotor.set(0) ;
       }
-      do_tilting();
+      //do_tilting();
+      do_tilting_pid();
     }
 
     // Color Wheel
@@ -1376,6 +1395,61 @@ mpose = new Pose2d();
 
   }
   // -------------------------------------------------------------
+  public void do_tilting_pid() {
+    double tiltPosition = tiltEncoder.getDistance();
+
+
+      // Robot starts HIGH, at 0.  increase to get to low, increase more to get to floor.
+      double low_goal = 140 ;
+      double floor_goal = 410 ;
+  
+      current_tilt_location = "";
+      if (tiltGoal == "") { tiltMotor.set(0);  return ;}
+
+      /* if the motor is lowering the dial, (ie, has a positive set value), ie, moving toward "low" or "floor",
+          it should reach its goal within 3 seconds, otherwise there is probably a ball stuck under it.
+          It won't reach the encoder value, so it will keep running until it unwinds.
+          If that's the case, stop the motor and set tiltgoal to null so that it stops trying.
+      */
+      if ((tiltGoal == "low" || tiltGoal == "floor") && tiltMotor.get() > 0) {
+        if (startedLoweringTime > 0) {
+          double elapsed = myClock.get() - startedLoweringTime;
+          if (elapsed > 3) {
+            tiltMotor.set(0);
+            tiltGoal = "" ;
+            System.out.println("lowering failed after 3 sec, bailing");
+            startedLoweringTime = 0 ;
+            return ;
+          }
+        } else {
+          startedLoweringTime = myClock.get() ;
+        }
+      } else {
+        startedLoweringTime = 0 ;
+      }
+  
+      if (tiltGoal == "high"){
+        tiltToAngleValue = 0 ;
+      } else if (tiltGoal == "low") {
+        tiltToAngleValue = low_goal;
+      } else if (tiltGoal == "floor") {
+         tiltToAngleValue = floor_goal ;
+      }
+
+      double answer = Math.round(tiltpid.calculate(tiltPosition,tiltToAngleValue));
+      SmartDashboard.putString("TILTPID:", "pos:"+tiltPosition+" val:"+tiltToAngleValue+" ans:"+answer+" speed:"+tiltMotor.get());
+      tiltMotor.set(answer) ;
+      if (Math.abs(tiltToAngleValue - tiltPosition) < 10) { 
+        current_tilt_location = tiltGoal ;
+        tiltMotor.set(0);
+      }
+
+      if (Math.abs(answer) < .05) {
+        current_tilt_location = tiltGoal ;
+        tiltMotor.set(0);
+      }
+  
+  }
   // -------------------------------------------------------------
   // TILT CONTROL
   public void do_tilting() {
@@ -1538,7 +1612,7 @@ mpose = new Pose2d();
   }
   public void run_shooter_wheels_for_shooting_out_low() {
     shooterWheel1.set(-.3);
-    shooterWheel2.set(.3) ;
+    shooterWheel2.set(.3F) ;
   }
   public void run_shooter_wheels_for_shooting_out_low_really_fast(){
     shooterWheel1.set(-1);
@@ -1785,7 +1859,7 @@ mpose = new Pose2d();
     spinDialOutControl2 = Shuffleboard.getTab("LIME")
     .add("Spin dial for shooting",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(14, 4)
+    .withPosition(14, 2)
     .withSize(3, 1)
     .getEntry();
 
@@ -1797,7 +1871,7 @@ mpose = new Pose2d();
     tiltAngleOnOffControl = Shuffleboard.getTab("LIME")
     .add("tilt to angle",false)
     .withWidget(BuiltInWidgets.kToggleButton)
-    .withPosition(11,4)
+    .withPosition(10,4)
     .withSize(3,1)
     .getEntry();
 
@@ -1880,6 +1954,124 @@ mpose = new Pose2d();
     if (  Math.abs(joyz) < .03) { joyz = 0 ;} // deadzone.
     drive.arcadeDrive(-joyy * throttle , joyz * turn_throttle );
   }
+  // -------------------------------------------------------------------
+  // -------------------------------------------------------------------
+  // -------------------------------------------------------------------
+  public void limepidtargeting( double distanceMin, double distanceMax) {
+    
+    double x = tx.getDouble(0.0);
+    double y = ty.getDouble(0.0);
+    double area = ta.getDouble(0.0);
+    // this indicates whether or not the limelight can see the target at all.
+    double havetarget = table.getEntry("tv").getDouble(0.0);
+
+    // use zeros to NOT do distance. 
+    boolean doing_distance_too = false ;
+    if (distanceMax != 0 && distanceMin != 0) { 
+      doing_distance_too = true ;
+    }
+
+    // if you don't see the target at all, do nothing.  rumble joystick?
+    if (havetarget < 1){  drive.arcadeDrive(0, 0);  return ; }
+  
+    //double answer = Math.round(limepid.calculate(-x,0));
+    //SmartDashboard.putString("LIMEPID x:", x+" ans:"+answer+" speed:" +  talonRightDrive.getSelectedSensorVelocity() );
+
+    // check scores:
+    if (Math.abs(x) < 1) {
+      limepid_x_score++ ;
+    } else {
+      limepid_x_score = 0 ;
+    }
+    if (doing_distance_too){
+      if (area > distanceMin && area < distanceMax){
+        limepid_distance_score++ ;
+      } else {
+        limepid_distance_score = 0 ;
+      }
+    }
+    /// if both scores match, we're done.
+    if (doing_distance_too && limepid_distance_score > 25 && limepid_x_score > 25) {
+      drive.arcadeDrive(0, 0);
+      ready_to_fire = true ;
+      return ;  
+    } else if (doing_distance_too == false &&  limepid_x_score > 25) {
+      drive.arcadeDrive(0, 0);
+      ready_to_fire = true ;
+      return ;  
+    }
+
+
+    // DISTANCE:  
+    double straight = 0;
+    if (doing_distance_too){ 
+      if (area < distanceMax && area > distanceMin){ // IN proper area:
+        straight = 0 ;
+      } else if (area > distanceMax){ // too close, backup.
+        if ( (area - distanceMax) > 2) {
+          straight = -.7 ;
+        } else if ((area - distanceMax) > 1) {
+          straight = -.6 ;
+        } else {
+          straight = -.5 ;
+        }
+      } else if (area < distanceMin){
+        if (( distanceMin - area) > 2) { // to far away, go forard.
+          straight = .7 ;
+        } else if ((distanceMin - area) > 1){
+          straight = .6 ;
+        } else {
+          straight = .5 ;
+        }
+      }
+    }
+
+
+    if (joystick.getRawButton(11) == false) {
+      return ; 
+    }
+
+    // TURNING:
+    double turnspeed ;
+    if (Math.abs(x) < 1) {
+      turnspeed = 0 ;
+    } else if (Math.abs(x) < 5) {
+      turnspeed = get_lime_turn_minspeed();
+    } else {
+      turnspeed = get_lime_turn_speed();
+    } 
+    turnspeed = Math.copySign(turnspeed,x) ;
+    SmartDashboard.putString("LPscore", limepid_x_score + " TS:" + turnspeed + " SPscore:" + limepid_distance_score );
+    drive.arcadeDrive(straight, turnspeed);
+
+
+  } 
+
+  public double get_lime_turn_speed() {
+      //if (joystick.getRawButton(11) == false) {return lime_turn_speed ;}
+      if (Math.abs(talonRightDrive.getSelectedSensorVelocity()) < 60) {
+         lime_turn_speed = lime_turn_speed + .005 ;
+      } else if (Math.abs(talonRightDrive.getSelectedSensorVelocity()) > 100) {
+        lime_turn_speed = lime_turn_speed - .005 ;
+      }
+    if (lime_turn_speed > .6) { lime_turn_speed = .6 ;}
+    return lime_turn_speed ;
+  }
+
+  public double get_lime_turn_minspeed() {
+    //if (joystick.getRawButton(11) == false) {return lime_turn_minspeed ;}
+
+      if (Math.abs(talonRightDrive.getSelectedSensorVelocity()) < 10) {
+        System.out.println("got here:" + lime_turn_minspeed);
+        lime_turn_minspeed = lime_turn_minspeed + .005 ;
+      } else if (Math.abs(talonRightDrive.getSelectedSensorVelocity()) > 20) {
+        System.out.println("got here2:" + lime_turn_minspeed);
+        lime_turn_minspeed = lime_turn_minspeed - .005 ;
+      }
+      if (lime_turn_minspeed > .5) { lime_turn_minspeed = .5 ;}
+
+    return lime_turn_minspeed ;
+  }
 
   public void limelight_targeting_left() {
 
@@ -1889,7 +2081,7 @@ mpose = new Pose2d();
     // this indicates whether or not the limelight can see the target at all.
     double havetarget = table.getEntry("tv").getDouble(0.0);
 
-    // if you don't see the target at all, do nothing.
+    // if you don't see the target at all, do nothing.  rumble joystick?
     if (havetarget < 1){  drive.arcadeDrive(0, 0);  return ; }
   
     // now turn toward target:
@@ -1970,19 +2162,19 @@ mpose = new Pose2d();
     // now turn toward target:
     double steer = 0;
     if (x > 12){
-      steer = 0.6;
+      steer = 0.5;
     }
     else if (x < 3){
-      steer = -0.6;
+      steer = -0.5;
     }
     else if (x < 11 && x > 9){
-      steer=0.5;
+      steer=0.4;
     }
     else if (x < 9 && x > 7){
-      steer = 0.4;
+      steer = 0.3;
     }
     else if (x > 3 && x < 5){
-      steer = -0.4;
+      steer = -0.3;
     }
 
     else if ( x > 5 && x < 7 ){
@@ -1995,22 +2187,22 @@ mpose = new Pose2d();
     
     double straight = 0;
     if (area > 4){
-      straight = -0.7;
-    }
-    else if (area > 3.3 && area < 4){
       straight = -0.6;
     }
-    else if (area < 3.3 && area > 2.7 ){
+    else if (area > 3.3 && area < 4){
       straight = -0.5;
     }
-    else if (area < 1){
-      straight = 0.7;
+    else if (area < 3.3 && area > 2.7 ){
+      straight = -0.4;
     }
-    else if (area < 2 && area > 1){
+    else if (area < 1){
       straight = 0.6;
     }
-    else if (area > 2 && area < 2.3){
+    else if (area < 2 && area > 1){
       straight = 0.5;
+    }
+    else if (area > 2 && area < 2.3){
+      straight = 0.4;
     }
 
     else if ( area > 2.3 && area < 2.7 ){
@@ -2069,8 +2261,9 @@ void pid_playground() {
   SmartDashboard.putNumber("KP", Kp) ;
   SmartDashboard.putNumber("KD", Kd) ;
   //gyroPID = new PIDController(Kp,Ki,Kd) ;
-  //limepid = new PIDController(Kp, Ki, Kd);
-  drivepid = new PIDController(Kp, Ki, Kd);
+  limepid = new PIDController(Kp, Ki, Kd);
+  //drivepid = new PIDController(Kp, Ki, Kd);
+  //tiltpid = new PIDController(Kp, Ki, Kd);
 }
 
 // -------------------------------------------------------------
