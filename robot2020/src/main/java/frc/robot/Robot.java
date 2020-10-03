@@ -99,17 +99,18 @@ public class Robot extends TimedRobot {
   // MOTORS:
   CANSparkMax shooterWheel1;
   CANSparkMax shooterWheel2;
-  WPI_TalonSRX talonLeftDrive;
-  WPI_TalonSRX talonRightDrive;
   WPI_VictorSPX tiltMotor ;
-  WPI_VictorSPX leftDriveFollow ;
-  WPI_VictorSPX rightDriveFollow ;
   WPI_VictorSPX dialMotor ;
   WPI_VictorSPX intakeMotor;
   WPI_VictorSPX wheelSpinnerMotor ;
   WPI_VictorSPX wheelElevatorMotor ;
-  CANSparkMax winchMotor ;
+  CANSparkMax winchMotor ;  
+  CANSparkMax leftDrive;
+  CANSparkMax rightDrive;
+    CANEncoder ld ;
+    CANEncoder rd ;
   WPI_VictorSPX deployMotor ;
+
 
   // CONTROLLERS:
   XboxController xbox = new XboxController(1);
@@ -280,21 +281,9 @@ public class Robot extends TimedRobot {
     // motors:
     shooterWheel1 = new CANSparkMax(11, MotorType.kBrushless);
     shooterWheel2 = new CANSparkMax(10, MotorType.kBrushless);
-    talonLeftDrive = new WPI_TalonSRX(2);
-      talonLeftDrive.configFactoryDefault() ;
-      talonLeftDrive.setSensorPhase(true);
-    talonRightDrive = new WPI_TalonSRX(1);
-      talonRightDrive.configFactoryDefault() ;
-      talonRightDrive.setSensorPhase(true);
-      talonRightDrive.setInverted(true) ;
-
-    leftDriveFollow = new WPI_VictorSPX(25);
-    rightDriveFollow = new WPI_VictorSPX(24);
-      rightDriveFollow.setInverted(true) ;
     dialMotor = new WPI_VictorSPX(21);
     tiltMotor = new WPI_VictorSPX(22);
     intakeMotor = new WPI_VictorSPX(23);
-
     wheelElevatorMotor = new WPI_VictorSPX(20);
     wheelSpinnerMotor = new WPI_VictorSPX(26);
     winchMotor = new CANSparkMax(12,MotorType.kBrushless) ;
@@ -309,50 +298,24 @@ public class Robot extends TimedRobot {
     wheelElevatorEncoder = new Encoder (4,5) ;
 
     // driving:
-    talonLeftDrive.configFactoryDefault() ;
-    talonRightDrive.configFactoryDefault() ;
-    leftDriveFollow.configFactoryDefault();  
-    leftDriveFollow.follow(talonLeftDrive);
-    rightDriveFollow.configFactoryDefault();  
-    rightDriveFollow.follow(talonRightDrive);
-    drive = new DifferentialDrive(talonLeftDrive,talonRightDrive);
-    drive.setRightSideInverted(false);
+    
+    leftDrive = new CANSparkMax(13,MotorType.kBrushless) ;
+    rightDrive = new CANSparkMax(14,MotorType.kBrushless) ;
+    drive = new DifferentialDrive(leftDrive,rightDrive);
+    ld = leftDrive.getEncoder() ;
+    rd = rightDrive.getEncoder() ;
+    rd.setPosition(0);  ld.setPosition(0);
+
 
     
     limelight_LED_mode(false);
     limelight_camera_mode(true);
 
-    talonRightDrive.configMotionCruiseVelocity(8000,30);
-    talonRightDrive.configMotionAcceleration(8000,30);
-    talonLeftDrive.configMotionCruiseVelocity(8000,30);
-    talonLeftDrive.configMotionAcceleration(8000,30);
-
-    talonLeftDrive.setSelectedSensorPosition(0,0,30);
-    talonRightDrive.setSelectedSensorPosition(0,0,30);
-
-    talonRightDrive.configClosedloopRamp(.5);
-    talonLeftDrive.configClosedloopRamp(.5);
-
-double P = 0.08 ;
-double I = 0 ;
-double D = 0.0 ;
-double F = 0.2 ;
     
-talonRightDrive.selectProfileSlot(0,0);
-talonRightDrive.config_kF(0,F,30);
-talonRightDrive.config_kP(0,P,30);
-talonRightDrive.config_kI(0,I,30);
-talonRightDrive.config_kD(0,D,30);    
 
-talonLeftDrive.selectProfileSlot(0,0);
-talonLeftDrive.config_kF(0,F,30);
-talonLeftDrive.config_kP(0,P,30);
-talonLeftDrive.config_kI(0,I,30);
-talonLeftDrive.config_kD(0,D,30);
-
-gyroPID = new PIDController(.05,0,.01) ;
-tiltpid = new PIDController(.03,0,0) ;
-mpose = new Pose2d(); 
+  gyroPID = new PIDController(.05,0,.01) ;
+  tiltpid = new PIDController(.03,0,0) ;
+  mpose = new Pose2d(); 
 
 
 
@@ -382,8 +345,6 @@ mpose = new Pose2d();
       done_moving2 = false ;
 
           // mpose:
-      talonLeftDrive.setSelectedSensorPosition(0,0,30);
-      talonRightDrive.setSelectedSensorPosition(0,0,30);
       gyro.reset();
       SmartDashboard.putString("MPOSE STATUS", "not started");
       do_mpose_init() ;
@@ -459,8 +420,8 @@ mpose = new Pose2d();
     if (done_auton_turning == false) {
       done_auton_turning = gyro_turn_to(0); // adjust back to zero.
       if (done_auton_turning == true) {
-        talonLeftDrive.setSelectedSensorPosition(0,0,30);
-        talonRightDrive.setSelectedSensorPosition(0,0,30);
+        //talonLeftDrive.setSelectedSensorPosition(0,0,30);
+        //talonRightDrive.setSelectedSensorPosition(0,0,30);
         done_auton_turning_time = myClock.get() ;
       }
       return ;
@@ -657,8 +618,8 @@ mpose = new Pose2d();
     dialMotor.set(0);
 
     // mpose:
-    talonLeftDrive.setSelectedSensorPosition(0,0,30);
-    talonRightDrive.setSelectedSensorPosition(0,0,30);
+    //talonLeftDrive.setSelectedSensorPosition(0,0,30);
+    //talonRightDrive.setSelectedSensorPosition(0,0,30);
     gyro.reset();
     SmartDashboard.putString("MPOSE STATUS", "not started");
     do_mpose_init() ;
@@ -747,26 +708,27 @@ mpose = new Pose2d();
     if (joystick.getRawButton(11)) {
       SmartDashboard.putString("HERE:", "got here");
       double dist = 10000 ;
-      talonRightDrive.set(ControlMode.MotionMagic, dist);
-      talonLeftDrive.set(ControlMode.MotionMagic, dist);
+      //talonRightDrive.set(ControlMode.MotionMagic, dist);
+      //talonLeftDrive.set(ControlMode.MotionMagic, dist);
     //  talonRightDrive.set(ControlMode.MotionMagic, demand0, demand1Type, demand1);
  /*    talonRightDrive.set(.2) ;
-    talonLeftDrive.set(.2) ;
-    talonLeftDrive.getFaults(_faults);
+    //talonLeftDrive.set(.2) ;
+    //talonLeftDrive.getFaults(_faults);
     System.out.println("OUT OF PHASE:" + _faults.SensorOutOfPhase); */
     }
   }
   public boolean moveRobot(double feet) {  
     double dist = feet * 2500 ;
-    talonRightDrive.set(ControlMode.MotionMagic, dist);
-    talonLeftDrive.set(ControlMode.MotionMagic, dist);
+    //talonRightDrive.set(ControlMode.MotionMagic, dist);
+    //talonLeftDrive.set(ControlMode.MotionMagic, dist);
+    /*
     if (
         Math.abs(dist - talonRightDrive.getSelectedSensorPosition()) < 1000
         && 
         Math.abs(dist - talonLeftDrive.getSelectedSensorPosition()) < 1000
        ) {
        return true ;
-    }
+    } */
     return false ;
   }
 
@@ -795,9 +757,9 @@ mpose = new Pose2d();
     double answer = gyroPID.calculate(gyro.getAngle(),degrees) ;
     double diff = Math.abs(gyro.getAngle() - degrees) ;
    SmartDashboard.putString("turnto:", "DEG:" + degrees + " diff:" + diff + " ans:" + answer);
-   if (talonRightDrive.getSelectedSensorVelocity() < 50) {
-     gyro_turn_minspeed = gyro_turn_minspeed + .01 ;
-   }
+   //if (talonRightDrive.getSelectedSensorVelocity() < 50) {
+   //  gyro_turn_minspeed = gyro_turn_minspeed + .01 ;
+   //}
     if (answer < 0) {
       if (answer > -gyro_turn_minspeed) { answer = -gyro_turn_minspeed;}
       drive.arcadeDrive(0, answer);
@@ -1608,12 +1570,12 @@ mpose = new Pose2d();
     limeAControl.setNumber( table.getEntry("tv").getDouble(0.0));
     limeTControl.setBoolean(targeting);
 
-    double Rposition = talonRightDrive.getSelectedSensorPosition();
-    double Lposition = talonLeftDrive.getSelectedSensorPosition();
-    SmartDashboard.putNumber("RIGHT POSITION:", Rposition);
-    SmartDashboard.putNumber("LEFT POSITION:", Lposition);
-    SmartDashboard.putNumber("RIGHTSPEED", talonRightDrive.getSelectedSensorVelocity()) ;
-    SmartDashboard.putNumber("LEFTSPEED", talonLeftDrive.getSelectedSensorVelocity()) ;
+    double Rposition ;// = talonRightDrive.getSelectedSensorPosition();
+    double Lposition ; //= talonLeftDrive.getSelectedSensorPosition();
+    //SmartDashboard.putNumber("RIGHT POSITION:", Rposition);
+    //SmartDashboard.putNumber("LEFT POSITION:", Lposition);
+    //SmartDashboard.putNumber("RIGHTSPEED", talonRightDrive.getSelectedSensorVelocity()) ;
+    //SmartDashboard.putNumber("LEFTSPEED", talonLeftDrive.getSelectedSensorVelocity()) ;
 
 
   }
@@ -2012,18 +1974,19 @@ mpose = new Pose2d();
 
   public double get_lime_turn_speed() {
       //if (joystick.getRawButton(11) == false) {return lime_turn_speed ;}
+      /*
       if (Math.abs(talonRightDrive.getSelectedSensorVelocity()) < 60) {
          lime_turn_speed = lime_turn_speed + .005 ;
       } else if (Math.abs(talonRightDrive.getSelectedSensorVelocity()) > 100) {
         lime_turn_speed = lime_turn_speed - .005 ;
-      }
+      } */
     if (lime_turn_speed > .6) { lime_turn_speed = .6 ;}
     return lime_turn_speed ;
   }
 
   public double get_lime_turn_minspeed() {
     //if (joystick.getRawButton(11) == false) {return lime_turn_minspeed ;}
-
+/*
       if (Math.abs(talonRightDrive.getSelectedSensorVelocity()) < 10) {
         System.out.println("got here:" + lime_turn_minspeed);
         lime_turn_minspeed = lime_turn_minspeed + .005 ;
@@ -2032,7 +1995,7 @@ mpose = new Pose2d();
         lime_turn_minspeed = lime_turn_minspeed - .005 ;
       }
       if (lime_turn_minspeed > .5) { lime_turn_minspeed = .5 ;}
-
+*/
     return lime_turn_minspeed ;
   }
 
@@ -2277,19 +2240,22 @@ public void shooting_unjam_done() {
 public void do_mpose_init() {
   od = new DifferentialDriveOdometry( new Rotation2d()) ;
   var gyroAngle = Rotation2d.fromDegrees(-gyro.getAngle());
-  mpose = od.update(gyroAngle, 
+  /*mpose = od.update(gyroAngle, 
     talonLeftDrive.getSelectedSensorPosition()  , 
     talonRightDrive.getSelectedSensorPosition() 
     ) ;
-}
+    */
+  }
 
 // -------------------------------------------------------------
 public void do_mpose_update() {
   var gyroAngle = Rotation2d.fromDegrees(-gyro.getAngle());
+  /*
   mpose = od.update(gyroAngle, 
     talonLeftDrive.getSelectedSensorPosition()  , 
     talonRightDrive.getSelectedSensorPosition() 
     ) ;
+    */
     SmartDashboard.putString("MPOSE:", mpose.toString()) ;
 
 }
@@ -2356,8 +2322,8 @@ public void zero_everything() {
   dialEncoder.reset() ;
   wheelElevatorEncoder.reset();
   zeroControl.setBoolean(false);
-  talonLeftDrive.setSelectedSensorPosition(0,0,30);
-  talonRightDrive.setSelectedSensorPosition(0,0,30);
+  //talonLeftDrive.setSelectedSensorPosition(0,0,30);
+  //talonRightDrive.setSelectedSensorPosition(0,0,30);
 }
 // -------------------------------------------------------------
 
