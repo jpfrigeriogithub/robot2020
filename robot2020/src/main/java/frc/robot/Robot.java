@@ -26,7 +26,6 @@ import edu.wpi.first.wpilibj.geometry.Pose2d;
 import edu.wpi.first.wpilibj.geometry.Rotation2d;
 import edu.wpi.first.wpilibj.kinematics.DifferentialDriveOdometry;
 import edu.wpi.first.wpilibj.SpeedControllerGroup;
-import edu.wpi.first.wpilibj.Talon;
 import edu.wpi.first.wpilibj.SpeedController;
 import edu.wpi.first.wpilibj.Spark;
 import edu.wpi.first.wpilibj.XboxController;
@@ -69,7 +68,7 @@ public class Robot extends TimedRobot {
 
   private final ADXRS450_Gyro gyro = new ADXRS450_Gyro();
 
-  /*
+  
   private final I2C.Port i2cPort = I2C.Port.kOnboard;
   private final ColorSensorV3 color_sensor = new ColorSensorV3(i2cPort);
   private final ColorMatch color_matcher = new ColorMatch();
@@ -77,10 +76,10 @@ public class Robot extends TimedRobot {
   private final Color kGreenTarget = ColorMatch.makeColor(0.197, 0.561, 0.240);
   private final Color kRedTarget = ColorMatch.makeColor(0.561, 0.232, 0.114);
   private final Color kYellowTarget = ColorMatch.makeColor(0.361, 0.524, 0.113);
-  */
+  
 
   PIDController gyroPID ;
-  PIDController limepid ;
+  PIDController limePID ;
   PIDController drivepid ;
   PIDController tiltpid ;
 
@@ -88,12 +87,20 @@ public class Robot extends TimedRobot {
   boolean targeting = false;
   UsbCamera camera;
   NetworkTableEntry camstream;
-  boolean limelight_target_button = false;
   boolean xbox_override = false;
   boolean xbox_low_dump_mode_on = false ;
   boolean xbox_low_dump_mode_on_really_fast = false;
   boolean outtake_trigger_mode = false;
   boolean xbox_shooter_wheels_out_high_really_fast_mode = false;
+
+  boolean tilt_has_been_zeroed = false ;
+  double started_zeroing_tilt = 0 ;
+  boolean tilt_switch_works = false ;
+
+  boolean wheel_elevator_has_been_zeroed = false ;
+  double started_zeroing_wheel_elevator = 0 ;
+
+
   
 
   // MOTORS:
@@ -122,6 +129,7 @@ public class Robot extends TimedRobot {
   Encoder tiltEncoder ;
   Encoder wheelElevatorEncoder ;
   AnalogInput climbSwitch = new AnalogInput(2) ;
+  AnalogInput tiltTopSwitch = new AnalogInput(3) ;
 
 
 
@@ -154,13 +162,14 @@ public class Robot extends TimedRobot {
   double target_found_distance_score = 0 ; 
   boolean target_and_fire_mode = false ;
   double ball_count = 0 ;
-  boolean limelightLEFT = true ;
   double gyro_turn_minspeed = .35 ;
-  double lime_turn_minspeed = .25 ;
-  double lime_turn_speed = .55 ;
+  //double lime_turn_minspeed = .25 ;
   double limepid_x_score = 0 ;
   double limepid_distance_score = 0 ;
   double auton_started_firing_time = 0 ;
+
+  double lime_turn_minspeed_baseline = .2 ;
+  double lime_turn_minspeed = lime_turn_minspeed_baseline ;
 
 
   // MPOSE
@@ -257,12 +266,12 @@ public class Robot extends TimedRobot {
     table.getEntry("pipeline").setNumber(0);
     CameraServer.getInstance().startAutomaticCapture("Camera", 0);
 
-      /*
+      
     color_matcher.addColorMatch(kBlueTarget);
     color_matcher.addColorMatch(kGreenTarget);
     color_matcher.addColorMatch(kRedTarget);
     color_matcher.addColorMatch(kYellowTarget);
-    */
+    
 
 
     NetworkTableInstance inst = NetworkTableInstance.getDefault();
@@ -312,7 +321,6 @@ public class Robot extends TimedRobot {
     limelight_camera_mode(true);
 
     
-
   gyroPID = new PIDController(.05,0,.01) ;
   tiltpid = new PIDController(.03,0,0) ;
   mpose = new Pose2d(); 
@@ -331,7 +339,7 @@ public class Robot extends TimedRobot {
 
   @Override
   public void autonomousInit() {
-      tiltEncoder.reset();
+      tiltEncoder.reset(); tilt_has_been_zeroed = true ;
       dialEncoder.reset() ;
       wheelElevatorEncoder.reset();
 
@@ -406,7 +414,7 @@ public class Robot extends TimedRobot {
     // -- ALL AUTON HERE:
   public void do_auton_default() {
     if (done_moving == false) {
-      done_moving = moveRobot(4); // go X feet forward from where we started.
+     // done_moving = moveRobot(4); // go X feet forward from where we started.
       return ;
     } 
   }
@@ -414,7 +422,7 @@ public class Robot extends TimedRobot {
     tiltGoal = "low";
     do_tilting_pid() ;
     if (done_moving == false) {
-      done_moving = moveRobot(5); // go X feet forward from where we started.
+     // done_moving = moveRobot(5); // go X feet forward from where we started.
       return ;
     } 
     if (done_auton_turning == false) {
@@ -430,7 +438,7 @@ public class Robot extends TimedRobot {
 
     if (done_moving2 == false) {
       SmartDashboard.putString("HERE:", "got here");
-      done_moving2 = moveRobot(4); // go X feet forward from where we started.
+     // done_moving2 = moveRobot(4); // go X feet forward from where we started.
       return ;
     } 
 
@@ -454,7 +462,7 @@ public class Robot extends TimedRobot {
    //  jump_forwards() ;  if (jump_forwards_finished == false) { return ;}
     targeting = true ;
     if (ready_to_fire == false) {
-      limelight_targeting_left();
+     // limelight_targeting_left();
       return ;
     }
     run_shooter_wheels_for_shooting_out(.75);
@@ -475,7 +483,7 @@ public class Robot extends TimedRobot {
 
     run_shooter_wheels_for_shooting_out(.65);
     if (ready_to_fire == false) {
-      limelight_targeting_right();
+      //limelight_targeting_right();
       auton_started_firing_time = myClock.get() ;
       return ;
     }
@@ -532,7 +540,7 @@ public class Robot extends TimedRobot {
 
     run_shooter_wheels_for_shooting_out(.65);
     if (ready_to_fire == false) {
-      limelight_targeting_left();
+      //limelight_targeting_left();
       auton_started_firing_time = myClock.get() ;
       return ;
     }
@@ -610,12 +618,17 @@ public class Robot extends TimedRobot {
   @Override
   public void teleopInit() {
     pid_playground() ;
+    limePID = new PIDController(.04, 0, 0);
+
     stop_low_dump() ; // from autonomous
     limelight_LED_mode(false);
     limelight_camera_mode(true);
     targeting=false ;
     stop_shooter_wheels();
     dialMotor.set(0);
+    started_zeroing_tilt = myClock.get() ;
+    started_zeroing_wheel_elevator = myClock.get() ;
+
 
     // mpose:
     //talonLeftDrive.setSelectedSensorPosition(0,0,30);
@@ -631,20 +644,24 @@ public class Robot extends TimedRobot {
     dialMotor.set(0);
     drive.arcadeDrive(0, 0);
 
+    //if (tilt_has_been_zeroed == false) { tiltMotor.set(.7);}
+
     // CHANGE THESE BEFORE COMPETITION: uncomment
-    intake_mode_xbox_on = true ;
-    continual_outtake_mode = true ;
+   // intake_mode_xbox_on = true ;
+   // continual_outtake_mode = true ;
 
   }
 
   @Override
   public void teleopPeriodic() {
 
-    //do_Colors();
-   do_mpose_update() ;
+    reset_tilt_to_zero();
+    reset_wheel_elevator_to_zero();
+    do_Colors();
+   // do_mpose_update() ;
 
 
-    if (zeroControl.getBoolean(false)){ // zero all encoders if ZERO button pushed.
+    if (zeroControl.getBoolean(false)){ // zero all encoders if ZERO button pushed on panel.
       zero_everything();
     }
 
@@ -652,23 +669,23 @@ public class Robot extends TimedRobot {
 
     if (usePanelControl.getBoolean(false)){ // "USE CONTROL PANEL" button is pressed.
       controlTabStuff() ;
-      normal_driving();
+       normal_driving();
       return;
     }
 
     do_control_maps() ;
 
 
-
-
     if (joystick.getRawButtonPressed(7)) {  // go into target and fire mode.
+      limePID.reset();
       limepid_x_score = 0 ;
       limepid_distance_score = 0 ;
       ready_to_fire = false;
-      tiltToAngleValue = 0 ;
+      tiltToAngleValue = 200 ; // was zero?
       tiltGoal = "angle";
+      lime_turn_minspeed = lime_turn_minspeed_baseline ;
       do_tilting_pid() ;
-      run_shooter_wheels_for_shooting_out(.65);
+    //  run_shooter_wheels_for_shooting_out(.65);
       limelight_LED_mode(true);    limelight_camera_mode(false);
 
     } else if (joystick.getRawButtonReleased(7)){  // leave target and fire mode.
@@ -684,7 +701,7 @@ public class Robot extends TimedRobot {
       limepidtargeting(2.5,2.8) ;
       //SmartDashboard.putBoolean("RTF:", ready_to_fire) ;
       if (ready_to_fire == true && current_tilt_location == "angle"){ // FIRE!
-          dialMotor.set(-1) ;
+          //dialMotor.set(-1) ;
       }
 
     } else { // we are NOT targeting:  button 7 is NOT pushed.
@@ -699,38 +716,6 @@ public class Robot extends TimedRobot {
   // -------------------------------------------------------------
   // -------------------------------------------------------------
 
-  public void talonpidtest() {
-    //limepid.setTolerance(.01);
-    //double answerR = limepid.calculate(talonRightDrive.getSelectedSensorPosition() / 10000,1) ;
-    //double answerL = limepid.calculate(talonLeftDrive.getSelectedSensorPosition() / 10000,-1) ;
-    //SmartDashboard.putNumber("TALONSTEER:", answerR) ;
-    //SmartDashboard.putNumber("TALONSTEEL:", answerL) ;
-    if (joystick.getRawButton(11)) {
-      SmartDashboard.putString("HERE:", "got here");
-      double dist = 10000 ;
-      //talonRightDrive.set(ControlMode.MotionMagic, dist);
-      //talonLeftDrive.set(ControlMode.MotionMagic, dist);
-    //  talonRightDrive.set(ControlMode.MotionMagic, demand0, demand1Type, demand1);
- /*    talonRightDrive.set(.2) ;
-    //talonLeftDrive.set(.2) ;
-    //talonLeftDrive.getFaults(_faults);
-    System.out.println("OUT OF PHASE:" + _faults.SensorOutOfPhase); */
-    }
-  }
-  public boolean moveRobot(double feet) {  
-    double dist = feet * 2500 ;
-    //talonRightDrive.set(ControlMode.MotionMagic, dist);
-    //talonLeftDrive.set(ControlMode.MotionMagic, dist);
-    /*
-    if (
-        Math.abs(dist - talonRightDrive.getSelectedSensorPosition()) < 1000
-        && 
-        Math.abs(dist - talonLeftDrive.getSelectedSensorPosition()) < 1000
-       ) {
-       return true ;
-    } */
-    return false ;
-  }
 
   // -------------------------------------------------------------
   public void drive_straight( double targetAngle , double targetSpeed) {
@@ -837,18 +822,7 @@ public class Robot extends TimedRobot {
         do_low_dump_really_fast();
       }
       
-      /*
-      boolean button8pressed = xbox.getRawButtonPressed(8) ;
-      if ( button8pressed == true && xbox_shooter_wheels_out_high_really_fast_mode == false){
-        xbox_shooter_wheels_out_high_really_fast_mode = true ;
-      } else if (button8pressed == true) {
-        xbox_shooter_wheels_out_high_really_fast_mode = false;
-        stop_shoot_out_high_really_fast();
-      }
-      if (xbox_shooter_wheels_out_high_really_fast_mode == true){
-        do_shooting_out_high_really_fast();
-      }
-      */
+
 
     }
 
@@ -908,12 +882,11 @@ public class Robot extends TimedRobot {
       }
 
 
-      // hit button, all intake mechanisms will turn on, hit it again, and they will turn off
+      // HOLD button, all intake mechanisms will turn on, release, they will turn off
        boolean button7pressed = xbox.getRawButtonPressed(7) ;
       if ( button7pressed == true){
         ball_count = 1 ;
       }
-      
       if (xbox.getRawButton(7)){
         run_all_intake();
         intake_mode_xbox_on = true ;
@@ -929,17 +902,7 @@ public class Robot extends TimedRobot {
     //  }
 
 
-      // hit button, low dump mode will turn on, hit button again, low dump mode will turn off
-      boolean button6pressed = xbox.getRawButtonPressed(6) ;
-   /*   if ( button6pressed == true && xbox_low_dump_mode_on == false){
-        xbox_low_dump_mode_on = true ;
-      } else if (button6pressed == true) {
-        xbox_low_dump_mode_on = false;
-        stop_low_dump();
-      }
-      if (xbox_low_dump_mode_on == true){
-        do_low_dump();
-      } */
+      // HOLD button for low dump, release to stop.
       if (xbox.getRawButton(6) == true) {
         do_low_dump();
         xbox_low_dump_mode_on = true ;
@@ -963,28 +926,33 @@ public class Robot extends TimedRobot {
       
       // setting wheel elavator to the right joystick on the xbox controller. It's a manual up and down, with stops at the ends
       // Click joystick in to spin the wheel
-      if (Math.abs(wheel_elevator) > 0.05 ){
-        double wheelHeight = wheelElevatorEncoder.getDistance() ;
-        if ( wheelHeight > 850 && wheel_elevator < 0) {
-          wheelElevatorMotor.set(0);
-        } else if (wheelHeight < 5 && wheel_elevator > 0) {
-          wheelElevatorMotor.set(0);
-        } else {
-            if (wheelHeight > 770){
-              wheelElevatorMotor.set(wheel_elevator * 0.6);
-            } else{
-              wheelElevatorMotor.set(wheel_elevator);
-            }
+      if (wheel_elevator_has_been_zeroed == true) { 
+        if (Math.abs(wheel_elevator) > 0.05 ){
+          double wheelHeight = wheelElevatorEncoder.getDistance() ;
+          if ( wheelHeight > 850 && wheel_elevator < 0) {
+            wheelElevatorMotor.set(0);
+          } else if (wheelHeight < 5 && wheel_elevator > 0) {
+            wheelElevatorMotor.set(0);
+          } else {
+              if (wheelHeight > 770){
+                wheelElevatorMotor.set(wheel_elevator * 0.6);
+              } else{
+                wheelElevatorMotor.set(wheel_elevator);
+              }
+          }
+        }
+        else {
+            wheelElevatorMotor.set(0);
         }
       }
-      else {
-        wheelElevatorMotor.set(0);
-      }
+
       if (spinning_color_wheel == true){
         wheelSpinnerMotor.set(1);
       } else {
         wheelSpinnerMotor.set(0);
       }
+
+
 
       // CLIMBING:
       if (winch_up == true) {
@@ -1325,6 +1293,9 @@ public class Robot extends TimedRobot {
   public void do_tilting_pid() {
     double tiltPosition = tiltEncoder.getDistance();
 
+    // don't do anything if we're trying to zero the encoder... 
+    if (tilt_has_been_zeroed == false) { return ;}
+
 
       // Robot starts HIGH, at 0.  increase to get to low, increase more to get to floor.
       double low_goal = 140 ;
@@ -1332,6 +1303,14 @@ public class Robot extends TimedRobot {
   
       current_tilt_location = "";
       if (tiltGoal == "") { tiltMotor.set(0);  return ;}
+
+
+      // don't let the motor run it upwards if it's already hitting the switch.
+      if (tilt_switch_works == true && tiltTopSwitch.getAverageVoltage() > 3 && tiltMotor.get() < 0) {
+          tiltMotor.set(0) ;
+          current_tilt_location = tiltGoal ;
+          return;
+      }
 
       /* if the motor is lowering the dial, (ie, has a positive set value), ie, moving toward "low" or "floor",
           it should reach its goal within 3 seconds, otherwise there is probably a ball stuck under it.
@@ -1365,7 +1344,19 @@ public class Robot extends TimedRobot {
 
       double answer = Math.round(tiltpid.calculate(tiltPosition,tiltToAngleValue));
       SmartDashboard.putString("TILTPID:", "pos:"+tiltPosition+" val:"+tiltToAngleValue+" ans:"+answer+" speed:"+tiltMotor.get());
-      tiltMotor.set(answer) ;
+      tiltMotor.set(answer) ; 
+
+      // don't use zero as goal for high, use the switch.
+      if (tilt_switch_works == true && tiltToAngleValue == 0) { 
+        if ( tiltTopSwitch.getAverageVoltage() < 3) {
+          tiltMotor.set(-.7) ;
+          return ;
+        } else {
+          tiltMotor.set(0) ;
+          current_tilt_location = tiltGoal ;
+        } 
+      }
+
       if (Math.abs(tiltToAngleValue - tiltPosition) < 10) { 
         current_tilt_location = tiltGoal ;
         tiltMotor.set(0);
@@ -1553,7 +1544,10 @@ public class Robot extends TimedRobot {
   public void all_values_to_dashboard() {
     SmartDashboard.putNumber("TILT:",tiltEncoder.getDistance());
 //    SmartDashboard.putNumber("TILT-SPEED:",tiltEncoder.getRate());
-    SmartDashboard.putString("CURRENT TILT:",current_tilt_location);
+SmartDashboard.putString("CURRENT TILT:",current_tilt_location);
+//SmartDashboard.putNumber("Tilt at Top:",tiltTopSwitch.getAverageVoltage());
+
+//SmartDashboard.putString("WheelElevator power:", wheelElevatorMotor.get() + " speed: " + wheelElevatorEncoder.getRate() );
  
     SmartDashboard.putNumber("DIAL:",dialEncoder.getDistance());
     SmartDashboard.putNumber("beam-1:", beam1.getAverageVoltage()) ;
@@ -1898,11 +1892,8 @@ public class Robot extends TimedRobot {
       doing_distance_too = true ;
     }
 
-    // if you don't see the target at all, do nothing.  rumble joystick?
+    // if you don't see the target at all, do nothing.  rumble joystick? RED flag? 
     if (havetarget < 1){  drive.arcadeDrive(0, 0);  return ; }
-  
-    //double answer = Math.round(limepid.calculate(-x,0));
-    //SmartDashboard.putString("LIMEPID x:", x+" ans:"+answer+" speed:" +  talonRightDrive.getSelectedSensorVelocity() );
 
     // check scores:
     if (Math.abs(x) < 1) {
@@ -1954,204 +1945,38 @@ public class Robot extends TimedRobot {
     }
 
 
-    //if (joystick.getRawButton(11) == false) {       return ;     }
-
     // TURNING:
-    double turnspeed ;
-    if (Math.abs(x) < 1) {
-      turnspeed = 0 ;
-    } else if (Math.abs(x) < 5) {
-      turnspeed = get_lime_turn_minspeed();
-    } else {
-      turnspeed = get_lime_turn_speed();
-    } 
-    turnspeed = Math.copySign(turnspeed,x) ;
-    SmartDashboard.putString("LPscore", limepid_x_score + " TS:" + turnspeed + " SPscore:" + limepid_distance_score );
-    drive.arcadeDrive(straight, turnspeed);
 
+    double turnval = -limePID.calculate(x,0) ;
+    double newturnval ;
+    //System.out.println("TV:"+ turnval + " X:" + x);
+
+    if (Math.abs(turnval) < lime_turn_minspeed) { newturnval = lime_turn_minspeed ; }
+    else {newturnval = turnval ;}
+
+    if (Math.abs(newturnval) > .7) { newturnval = .7 ;}
+
+    if (newturnval == lime_turn_minspeed && Math.abs(gyro.getRate()) < .08 && Math.abs(x) > 2 ) {
+      lime_turn_minspeed = lime_turn_minspeed + .005 ;
+    }
+    newturnval = Math.copySign(newturnval, turnval) ;
+  //  System.out.println("X:" + x + " TV:" + turnval + " NTV:" + newturnval);
+    SmartDashboard.putString("LPscore", limepid_x_score + " TV" + newturnval + 
+        " SPscore:" + limepid_distance_score + " drive:" + straight);
+
+    if (joystick.getRawButton(8)) {
+      drive.arcadeDrive(straight, newturnval);
+     // drive.arcadeDrive(0, turnval);
+    }
 
   } 
 
-  public double get_lime_turn_speed() {
-      //if (joystick.getRawButton(11) == false) {return lime_turn_speed ;}
-      /*
-      if (Math.abs(talonRightDrive.getSelectedSensorVelocity()) < 60) {
-         lime_turn_speed = lime_turn_speed + .005 ;
-      } else if (Math.abs(talonRightDrive.getSelectedSensorVelocity()) > 100) {
-        lime_turn_speed = lime_turn_speed - .005 ;
-      } */
-    if (lime_turn_speed > .6) { lime_turn_speed = .6 ;}
-    return lime_turn_speed ;
-  }
 
-  public double get_lime_turn_minspeed() {
-    //if (joystick.getRawButton(11) == false) {return lime_turn_minspeed ;}
-/*
-      if (Math.abs(talonRightDrive.getSelectedSensorVelocity()) < 10) {
-        System.out.println("got here:" + lime_turn_minspeed);
-        lime_turn_minspeed = lime_turn_minspeed + .005 ;
-      } else if (Math.abs(talonRightDrive.getSelectedSensorVelocity()) > 20) {
-        System.out.println("got here2:" + lime_turn_minspeed);
-        lime_turn_minspeed = lime_turn_minspeed - .005 ;
-      }
-      if (lime_turn_minspeed > .5) { lime_turn_minspeed = .5 ;}
-*/
-    return lime_turn_minspeed ;
-  }
 
-  public void limelight_targeting_left() {
-
-    double x = tx.getDouble(0.0);
-    double y = ty.getDouble(0.0);
-    double area = ta.getDouble(0.0);
-    // this indicates whether or not the limelight can see the target at all.
-    double havetarget = table.getEntry("tv").getDouble(0.0);
-
-    // if you don't see the target at all, do nothing.  rumble joystick?
-    if (havetarget < 1){  drive.arcadeDrive(0, 0);  return ; }
   
-    // now turn toward target:
-
-    double steer = 0;
-    if (x > 10){
-      steer = 0.6;
-    }
-    else if (x < -10){
-      steer = -0.6;
-    }
-    else if (x < 10 && x > 1){
-      steer=0.5;
-    }
-    else if (x < 1 && x > 0){
-      steer = 0.4;
-    }
-    else if (x > -10 && x < -3){
-      steer = -0.5;
-    }
-    else if (x > -3 && x < -2){
-      steer = 0.4;
-    }
-
-    else if ( x > -2 && x < 0 ){
-      target_found_score = target_found_score + 1 ;
-      steer = 0;
-    } else {
-      target_found_score = 0 ;
-    }
-   
-
-    double straight = 0;
-    if (area > 4){
-      straight = -0.7;
-    }
-    else if (area > 2.8 && area < 4){
-      straight = -0.6;
-    }
-    else if (area < 1){
-      straight = 0.7;
-    }
-    else if (area < 2 && area > 1){
-      straight = 0.6;
-    }
-    else if (area < 2.5 && area > 2){
-      straight = 0.5;
-    }
-
-    else if ( area > 2.5 && area < 2.8 ){
-      target_found_distance_score = target_found_distance_score + 1 ;
-      straight = 0;
-    } else {
-      target_found_distance_score = 0 ;
-    }
-    
-    drive.arcadeDrive(straight, steer);
-    
-
-    if (target_found_score > 40 && target_found_distance_score > 40){
-      ready_to_fire = true ;
-    }
-
- 
-
-  }
-  public void limelight_targeting_right() {
-
-    double x = tx.getDouble(0.0);
-    double y = ty.getDouble(0.0);
-    double area = ta.getDouble(0.0);
-    // this indicates whether or not the limelight can see the target at all.
-    double havetarget = table.getEntry("tv").getDouble(0.0);
-
-    // if you don't see the target at all, do nothing.
-    if (havetarget < 1){  drive.arcadeDrive(0, 0);  return ; }
-
-    // now turn toward target:
-    double steer = 0;
-    if (x > 12){
-      steer = 0.5;
-    }
-    else if (x < 3){
-      steer = -0.5;
-    }
-    else if (x < 11 && x > 9){
-      steer=0.4;
-    }
-    else if (x < 9 && x > 7){
-      steer = 0.3;
-    }
-    else if (x > 3 && x < 5){
-      steer = -0.3;
-    }
-
-    else if ( x > 5 && x < 7 ){
-      target_found_score = target_found_score + 1 ;
-      steer = 0;
-    } else {
-      target_found_score = 0 ;
-    }
-    //limeSteerControl.setNumber(steer) ;
-    
-    double straight = 0;
-    if (area > 4){
-      straight = -0.6;
-    }
-    else if (area > 3.3 && area < 4){
-      straight = -0.5;
-    }
-    else if (area < 3.3 && area > 2.7 ){
-      straight = -0.4;
-    }
-    else if (area < 1){
-      straight = 0.6;
-    }
-    else if (area < 2 && area > 1){
-      straight = 0.5;
-    }
-    else if (area > 2 && area < 2.3){
-      straight = 0.4;
-    }
-
-    else if ( area > 2.3 && area < 2.7 ){
-      target_found_distance_score = target_found_distance_score + 1 ;
-      straight = 0;
-    } else {
-      target_found_distance_score = 0 ;
-    }
-    
-    
-    //limeSteerControl.setNumber(straight) ;
-    drive.arcadeDrive(straight, steer);
-    
-
-    if (target_found_score > 40 && target_found_distance_score > 40){
-      ready_to_fire = true ;
-    }
-
-  }
-// -------------------------------------------------------------
 
 
-/*
+
 public void do_Colors(){
 
   Color detectedColor = color_sensor.getColor();
@@ -2176,7 +2001,7 @@ public void do_Colors(){
       SmartDashboard.putNumber("Confidence", match.confidence);
       SmartDashboard.putString("Detected Color", colorString);
 }
-*/
+
   
 void pid_playground() {
   //    pc = new PIDController(kP,kI,kD) ;
@@ -2187,7 +2012,7 @@ void pid_playground() {
   SmartDashboard.putNumber("KP", Kp) ;
   SmartDashboard.putNumber("KD", Kd) ;
   //gyroPID = new PIDController(Kp,Ki,Kd) ;
-  limepid = new PIDController(Kp, Ki, Kd);
+ // limepid = new PIDController(Kp, Ki, Kd);
   //drivepid = new PIDController(Kp, Ki, Kd);
   //tiltpid = new PIDController(Kp, Ki, Kd);
 }
@@ -2316,6 +2141,57 @@ public boolean do_mpose( double destX, double destY) {
 
 // -------------------------------------------------------------
 // -------------------------------------------------------------
+
+public void reset_tilt_to_zero() {
+  // pull up the tilt until it triggers the switch.  then set it to zero.
+  if (tilt_has_been_zeroed == true) { return ;}
+  if (tiltTopSwitch.getAverageVoltage() > 3) {
+    tiltEncoder.reset();
+    tilt_has_been_zeroed = true ;
+    tiltMotor.set(0);
+    tilt_switch_works = true ;
+    System.out.println("zer0ing tilt succeeded.");
+    return ;
+  }
+  tiltMotor.set(-.7) ;
+
+  // if 3 seconds have passed and we're still not there, the switch must be broken, so assume we're there.
+  double elapsed = myClock.get() - started_zeroing_tilt;
+  if (elapsed > 6) {
+      tiltEncoder.reset();
+      tilt_has_been_zeroed = true ;
+      tiltMotor.set(0);
+      System.out.println("zer0ing tilt failed after 6 seconds, bailing");
+      return ;
+  }
+
+}
+
+
+public void reset_wheel_elevator_to_zero() {
+  // run it slowly down to the bottom until it's not moving.  then set it to zero.
+  if (wheel_elevator_has_been_zeroed == true) { return ;}
+  double elapsed = myClock.get() - started_zeroing_wheel_elevator;
+
+  if (Math.abs(wheelElevatorEncoder.getRate()) < 5 && elapsed > .5) {
+    wheelElevatorEncoder.reset();
+    wheel_elevator_has_been_zeroed = true ;
+    wheelElevatorMotor.set(0);
+    System.out.println("zer0ing elevator succeeded");
+    return ;
+  }
+  wheelElevatorMotor.set(.4) ;
+
+  // if X seconds have passed and we're still not there, something's wrong, so bail.
+  if (elapsed > 5) {
+    wheelElevatorEncoder.reset();
+    wheel_elevator_has_been_zeroed = true ;
+    wheelElevatorMotor.set(0);
+    System.out.println("zer0ing wheel elevator failed, bailing");
+    return ;
+  }
+
+}
 
 public void zero_everything() {
   tiltEncoder.reset();
