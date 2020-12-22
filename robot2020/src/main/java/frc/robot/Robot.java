@@ -113,7 +113,9 @@ public class Robot extends TimedRobot {
   WPI_VictorSPX wheelElevatorMotor ;
   CANSparkMax winchMotor ;  
   CANSparkMax leftDrive;
+  CANSparkMax leftDrive2;
   CANSparkMax rightDrive;
+  CANSparkMax rightDrive2;
     CANEncoder ld ;
     CANEncoder rd ;
   WPI_VictorSPX deployMotor ;
@@ -127,6 +129,7 @@ public class Robot extends TimedRobot {
   // ENCODERS:
   Encoder dialEncoder ;
   Encoder tiltEncoder ;
+  Encoder tiltEncoderDown ;
   Encoder wheelElevatorEncoder ;
   AnalogInput climbSwitch = new AnalogInput(2) ;
   AnalogInput tiltTopSwitch = new AnalogInput(3) ;
@@ -168,7 +171,7 @@ public class Robot extends TimedRobot {
   double limepid_distance_score = 0 ;
   double auton_started_firing_time = 0 ;
 
-  double lime_turn_minspeed_baseline = .2 ;
+  double lime_turn_minspeed_baseline = .1 ;
   double lime_turn_minspeed = lime_turn_minspeed_baseline ;
 
 
@@ -229,6 +232,8 @@ public class Robot extends TimedRobot {
 
   private NetworkTableEntry pidKpControl;
   private NetworkTableEntry pidKdControl ;
+  private NetworkTableEntry pidKpControl2;
+  private NetworkTableEntry pidKdControl2 ;
   private NetworkTableEntry pidKiControl ;
   private NetworkTableEntry extraControl ;
   
@@ -273,7 +278,6 @@ public class Robot extends TimedRobot {
     color_matcher.addColorMatch(kYellowTarget);
     
 
-
     NetworkTableInstance inst = NetworkTableInstance.getDefault();
     NetworkTable CamPub = inst.getTable("CameraPublisher");
     camstream = CamPub.getEntry("camera_stream");
@@ -303,19 +307,22 @@ public class Robot extends TimedRobot {
 
     // encoders:
     tiltEncoder = new Encoder (0,1);
+    tiltEncoderDown = new Encoder (6,7);
     dialEncoder = new Encoder (2,3) ;
     wheelElevatorEncoder = new Encoder (4,5) ;
 
     // driving:
     
     leftDrive = new CANSparkMax(13,MotorType.kBrushless) ;
+    leftDrive2 = new CANSparkMax(15,MotorType.kBrushless) ;
+    leftDrive2.follow(leftDrive) ;
     rightDrive = new CANSparkMax(14,MotorType.kBrushless) ;
+    rightDrive2 = new CANSparkMax(16,MotorType.kBrushless) ;
+    rightDrive2.follow(rightDrive) ;
     drive = new DifferentialDrive(leftDrive,rightDrive);
     ld = leftDrive.getEncoder() ;
     rd = rightDrive.getEncoder() ;
     rd.setPosition(0);  ld.setPosition(0);
-
-
     
     limelight_LED_mode(false);
     limelight_camera_mode(true);
@@ -661,6 +668,7 @@ public class Robot extends TimedRobot {
    // do_mpose_update() ;
 
 
+
     if (zeroControl.getBoolean(false)){ // zero all encoders if ZERO button pushed on panel.
       zero_everything();
     }
@@ -676,35 +684,24 @@ public class Robot extends TimedRobot {
     do_control_maps() ;
 
 
-    if (joystick.getRawButtonPressed(7)) {  // go into target and fire mode.
-      limePID.reset();
-      limepid_x_score = 0 ;
-      limepid_distance_score = 0 ;
-      ready_to_fire = false;
-      tiltToAngleValue = 200 ; // was zero?
-      tiltGoal = "angle";
-      lime_turn_minspeed = lime_turn_minspeed_baseline ;
+    // TARGETING and FIRING near start line:
+    Integer fire_near_start_button = 7 ;
+    if (joystick.getRawButtonPressed(fire_near_start_button)) {  // go into target and fire mode.
+      limetargeting_init(150);
+    } else if (joystick.getRawButtonReleased(fire_near_start_button)){  // leave target and fire mode.
+      limetargeting_end() ;
+    }
+    if (joystick.getRawButton(fire_near_start_button) == true ) {   // do stuff DURING target-and-fire mode.
       do_tilting_pid() ;
-    //  run_shooter_wheels_for_shooting_out(.65);
-      limelight_LED_mode(true);    limelight_camera_mode(false);
-
-    } else if (joystick.getRawButtonReleased(7)){  // leave target and fire mode.
-        targeting = false ;
-        ready_to_fire = false ;
-        limelight_LED_mode(false);    limelight_camera_mode(true);
-        stop_shooter_wheels();
-        dialMotor.set(0);
-        drive.arcadeDrive(0, 0);
-    } 
-    if (joystick.getRawButton(7) == true ) {   // do stuff DURING target-and-fire mode.
-      do_tilting_pid() ;
-      limepidtargeting(2.5,2.8) ;
-      //SmartDashboard.putBoolean("RTF:", ready_to_fire) ;
+      limepidtargeting(2,3.5,3.8) ;
       if (ready_to_fire == true && current_tilt_location == "angle"){ // FIRE!
-          //dialMotor.set(-1) ;
+          dialMotor.set(-1) ;
+          run_shooter_wheels_for_shooting_out_high();
       }
-
-    } else { // we are NOT targeting:  button 7 is NOT pushed.
+    } 
+    
+    
+    else { // we are NOT targeting:  button 7 is NOT pushed.
       normal_driving() ;
     }
     
@@ -712,7 +709,26 @@ public class Robot extends TimedRobot {
   }
 
   // -------------------------------------------------------------
+  public void limetargeting_end() {
+    targeting = false ;
+    ready_to_fire = false ;
+    limelight_LED_mode(false);    limelight_camera_mode(true);
+    stop_shooter_wheels();
+    dialMotor.set(0);
+    drive.arcadeDrive(0, 0);
+  }
   // -------------------------------------------------------------
+  public void limetargeting_init(double tilt_to_fire_angle) {
+    limelight_LED_mode(true);    limelight_camera_mode(false);
+    limePID.reset();
+    limepid_x_score = 0 ;
+    limepid_distance_score = 0 ;
+    ready_to_fire = false;
+    tiltToAngleValue = tilt_to_fire_angle ;
+    tiltGoal = "angle";
+    lime_turn_minspeed = lime_turn_minspeed_baseline ;
+    do_tilting_pid() ;
+}
   // -------------------------------------------------------------
   // -------------------------------------------------------------
 
@@ -766,7 +782,7 @@ public class Robot extends TimedRobot {
     int tilting_to_floor = xbox.getPOV();
     int tilting_low = xbox.getPOV();
     int tilting_high = xbox.getPOV();
-    double wheel_elevator = xbox.getRawAxis(3);
+    double right_stick = xbox.getRawAxis(3);
     double vertical_dial_override = xbox.getRawAxis(1);
     boolean spinning_color_wheel = xbox.getRawButton(12);
     boolean intake_out = joystick.getRawButton(1);
@@ -790,13 +806,19 @@ public class Robot extends TimedRobot {
       if (xbox.getRawButtonPressed(9) ){
         zero_everything();
       }
-      
+
+
       // manual override for the wheel elevator going up and down that ignores the sensor. CAREFUL!!
-      if (Math.abs(wheel_elevator) > 0.05){
-        wheelElevatorMotor.set(wheel_elevator);
+      if (xbox.getRawButton(1)) {
+        wheelSpinnerMotor.set(0.7);
+      } else if (xbox.getRawButton(3)){
+        wheelSpinnerMotor.set(-0.7);
       } else {
-        wheelElevatorMotor.set(0);
+        wheelSpinnerMotor.set(0);
       }
+      
+
+  
       // Button that you have to hold down to spin the wheel
       if (spinning_color_wheel == true){
         wheelSpinnerMotor.set(0.7);
@@ -828,7 +850,6 @@ public class Robot extends TimedRobot {
 
 
 
-    // code for tilting the dial to set value
     if ( xbox_override == false){
 
         // TILTING: 
@@ -926,18 +947,20 @@ public class Robot extends TimedRobot {
       
       // setting wheel elavator to the right joystick on the xbox controller. It's a manual up and down, with stops at the ends
       // Click joystick in to spin the wheel
+
+
       if (wheel_elevator_has_been_zeroed == true) { 
-        if (Math.abs(wheel_elevator) > 0.05 ){
+        if (Math.abs(right_stick) > 0.05 ){
           double wheelHeight = wheelElevatorEncoder.getDistance() ;
-          if ( wheelHeight > 850 && wheel_elevator < 0) {
+          if ( wheelHeight > 850 && right_stick < 0) {
             wheelElevatorMotor.set(0);
-          } else if (wheelHeight < 5 && wheel_elevator > 0) {
+          } else if (wheelHeight < 5 && right_stick > 0) {
             wheelElevatorMotor.set(0);
           } else {
               if (wheelHeight > 770){
-                wheelElevatorMotor.set(wheel_elevator * 0.6);
+                wheelElevatorMotor.set(right_stick * 0.6);
               } else{
-                wheelElevatorMotor.set(wheel_elevator);
+                wheelElevatorMotor.set(right_stick);
               }
           }
         }
@@ -947,9 +970,9 @@ public class Robot extends TimedRobot {
       }
 
       if (spinning_color_wheel == true){
-        wheelSpinnerMotor.set(1);
+       wheelSpinnerMotor.set(1);
       } else {
-        wheelSpinnerMotor.set(0);
+       wheelSpinnerMotor.set(0);
       }
 
 
@@ -1272,7 +1295,6 @@ public class Robot extends TimedRobot {
         doing_manual_tilt = false ;
         tiltMotor.set(0) ;
       }
-      //do_tilting();
       do_tilting_pid();
     }
 
@@ -1289,6 +1311,9 @@ public class Robot extends TimedRobot {
     limelight_camera_mode(false);
 
   }
+ 
+
+
   // -------------------------------------------------------------
   public void do_tilting_pid() {
     double tiltPosition = tiltEncoder.getDistance();
@@ -1306,7 +1331,7 @@ public class Robot extends TimedRobot {
 
 
       // don't let the motor run it upwards if it's already hitting the switch.
-      if (tilt_switch_works == true && tiltTopSwitch.getAverageVoltage() > 3 && tiltMotor.get() < 0) {
+      if (tilt_switch_works == true && tiltTopSwitch.getAverageVoltage() < 3 && tiltMotor.get() < 0) {
           tiltMotor.set(0) ;
           current_tilt_location = tiltGoal ;
           return;
@@ -1348,8 +1373,8 @@ public class Robot extends TimedRobot {
 
       // don't use zero as goal for high, use the switch.
       if (tilt_switch_works == true && tiltToAngleValue == 0) { 
-        if ( tiltTopSwitch.getAverageVoltage() < 3) {
-          tiltMotor.set(-.7) ;
+        if ( tiltTopSwitch.getAverageVoltage() > 3) {
+          tiltMotor.set(-1) ;
           return ;
         } else {
           tiltMotor.set(0) ;
@@ -1357,7 +1382,7 @@ public class Robot extends TimedRobot {
         } 
       }
 
-      if (Math.abs(tiltToAngleValue - tiltPosition) < 10) { 
+      if (Math.abs(tiltToAngleValue - tiltPosition) < 5) { 
         current_tilt_location = tiltGoal ;
         tiltMotor.set(0);
       }
@@ -1522,7 +1547,7 @@ public class Robot extends TimedRobot {
   }
   public void run_shooter_wheels_for_shooting_out_high() {
     shooterWheel1.set(-0.58);
-    shooterWheel2.set(0.5802) ;
+    shooterWheel2.set(0.58) ;
   }
   public void run_shooter_wheels_for_shooting_out_high_really_fast(){
     shooterWheel1.set(-0.65);
@@ -1543,9 +1568,13 @@ public class Robot extends TimedRobot {
   //   -------------------------------------------------------------
   public void all_values_to_dashboard() {
     SmartDashboard.putNumber("TILT:",tiltEncoder.getDistance());
+    SmartDashboard.putNumber("TILTB:dis:",tiltEncoderDown.getDistance());
+    SmartDashboard.putNumber("TILTB:rate",tiltEncoderDown.getRate());
 //    SmartDashboard.putNumber("TILT-SPEED:",tiltEncoder.getRate());
 SmartDashboard.putString("CURRENT TILT:",current_tilt_location);
-//SmartDashboard.putNumber("Tilt at Top:",tiltTopSwitch.getAverageVoltage());
+SmartDashboard.putNumber("Tilt at Top: VOLT",tiltTopSwitch.getAverageVoltage());
+SmartDashboard.putNumber("Tilt motor power",tiltMotor.get());
+SmartDashboard.putBoolean("Tilt zero'd:",tilt_has_been_zeroed);
 
 //SmartDashboard.putString("WheelElevator power:", wheelElevatorMotor.get() + " speed: " + wheelElevatorEncoder.getRate() );
  
@@ -1834,6 +1863,18 @@ SmartDashboard.putString("CURRENT TILT:",current_tilt_location);
     .add("extra",.2)
     .getEntry() ;
 
+
+    pidKpControl2 = Shuffleboard.getTab("PID")
+    .add("KP2",.03)
+    .getEntry() ;     
+    pidKdControl2 = Shuffleboard.getTab("PID")
+    .add("KD2",.05)
+    .getEntry() ;
+  
+
+
+
+
     }
 
   // -------------------------------------------------------------
@@ -1878,7 +1919,7 @@ SmartDashboard.putString("CURRENT TILT:",current_tilt_location);
   // -------------------------------------------------------------------
   // -------------------------------------------------------------------
   // -------------------------------------------------------------------
-  public void limepidtargeting( double distanceMin, double distanceMax) {
+  public void limepidtargeting( double turning_tolerance, double distanceMin, double distanceMax) {
     
     double x = tx.getDouble(0.0);
     double y = ty.getDouble(0.0);
@@ -1895,12 +1936,14 @@ SmartDashboard.putString("CURRENT TILT:",current_tilt_location);
     // if you don't see the target at all, do nothing.  rumble joystick? RED flag? 
     if (havetarget < 1){  drive.arcadeDrive(0, 0);  return ; }
 
+
     // check scores:
-    if (Math.abs(x) < 1) {
+    if (Math.abs(x) < turning_tolerance) {
       limepid_x_score++ ;
     } else {
       limepid_x_score = 0 ;
     }
+
     if (doing_distance_too){
       if (area > distanceMin && area < distanceMax){
         limepid_distance_score++ ;
@@ -1908,6 +1951,9 @@ SmartDashboard.putString("CURRENT TILT:",current_tilt_location);
         limepid_distance_score = 0 ;
       }
     }
+
+
+
     /// if both scores match, we're done.
     if (doing_distance_too && limepid_distance_score > 25 && limepid_x_score > 25) {
       drive.arcadeDrive(0, 0);
@@ -1956,17 +2002,17 @@ SmartDashboard.putString("CURRENT TILT:",current_tilt_location);
 
     if (Math.abs(newturnval) > .7) { newturnval = .7 ;}
 
-    if (newturnval == lime_turn_minspeed && Math.abs(gyro.getRate()) < .08 && Math.abs(x) > 2 ) {
+    if (newturnval == lime_turn_minspeed && Math.abs(gyro.getRate()) < .08 && Math.abs(x) > turning_tolerance ) {
       lime_turn_minspeed = lime_turn_minspeed + .005 ;
     }
     newturnval = Math.copySign(newturnval, turnval) ;
   //  System.out.println("X:" + x + " TV:" + turnval + " NTV:" + newturnval);
     SmartDashboard.putString("LPscore", limepid_x_score + " TV" + newturnval + 
-        " SPscore:" + limepid_distance_score + " drive:" + straight);
+        " SPscore:" + limepid_distance_score + " drive:" + straight + "area:" + area);
 
-    if (joystick.getRawButton(8)) {
+        // use 8 to override the wheels and make it stay still.
+    if (joystick.getRawButton(8) == false) {
       drive.arcadeDrive(straight, newturnval);
-     // drive.arcadeDrive(0, turnval);
     }
 
   } 
@@ -2006,7 +2052,9 @@ public void do_Colors(){
 void pid_playground() {
   //    pc = new PIDController(kP,kI,kD) ;
   double Kp = pidKpControl.getDouble(.03) ;
-  double Kd = pidKdControl.getDouble(.05) ;
+  double Kd = pidKdControl.getDouble(.05) ;  
+  double Kp2 = pidKpControl2.getDouble(.03) ;
+  double Kd2 = pidKdControl2.getDouble(.05) ;
   //double Kp = .5 ;
   double Ki = 0 ; //double Kd = 0 ;
   SmartDashboard.putNumber("KP", Kp) ;
@@ -2014,7 +2062,7 @@ void pid_playground() {
   //gyroPID = new PIDController(Kp,Ki,Kd) ;
  // limepid = new PIDController(Kp, Ki, Kd);
   //drivepid = new PIDController(Kp, Ki, Kd);
-  //tiltpid = new PIDController(Kp, Ki, Kd);
+ // tiltpid = new PIDController(Kp, Ki, Kd);
 }
 
 // -------------------------------------------------------------
@@ -2144,8 +2192,9 @@ public boolean do_mpose( double destX, double destY) {
 
 public void reset_tilt_to_zero() {
   // pull up the tilt until it triggers the switch.  then set it to zero.
+
   if (tilt_has_been_zeroed == true) { return ;}
-  if (tiltTopSwitch.getAverageVoltage() > 3) {
+  if (tiltTopSwitch.getAverageVoltage() < 3) {
     tiltEncoder.reset();
     tilt_has_been_zeroed = true ;
     tiltMotor.set(0);
@@ -2153,7 +2202,7 @@ public void reset_tilt_to_zero() {
     System.out.println("zer0ing tilt succeeded.");
     return ;
   }
-  tiltMotor.set(-.7) ;
+  tiltMotor.set(-1) ;
 
   // if 3 seconds have passed and we're still not there, the switch must be broken, so assume we're there.
   double elapsed = myClock.get() - started_zeroing_tilt;
@@ -2195,6 +2244,7 @@ public void reset_wheel_elevator_to_zero() {
 
 public void zero_everything() {
   tiltEncoder.reset();
+  tiltEncoderDown.reset();
   dialEncoder.reset() ;
   wheelElevatorEncoder.reset();
   zeroControl.setBoolean(false);
@@ -2202,6 +2252,8 @@ public void zero_everything() {
   //talonRightDrive.setSelectedSensorPosition(0,0,30);
 }
 // -------------------------------------------------------------
+
+
 
 
 }
