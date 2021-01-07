@@ -687,18 +687,35 @@ public class Robot extends TimedRobot {
     // TARGETING and FIRING near start line:
     Integer fire_near_start_button = 7 ;
     if (joystick.getRawButtonPressed(fire_near_start_button)) {  // go into target and fire mode.
-      limetargeting_init(150);
+      limetargeting_init(5);
     } else if (joystick.getRawButtonReleased(fire_near_start_button)){  // leave target and fire mode.
       limetargeting_end() ;
     }
     if (joystick.getRawButton(fire_near_start_button) == true ) {   // do stuff DURING target-and-fire mode.
       do_tilting_pid() ;
-      limepidtargeting(2,3.5,3.8) ;
+      limepidtargeting(2,2.2,2.5) ;
       if (ready_to_fire == true && current_tilt_location == "angle"){ // FIRE!
           dialMotor.set(-1) ;
           run_shooter_wheels_for_shooting_out_high();
       }
     } 
+
+
+        // TARGETING and FIRING near start line:
+        Integer fire_trench_start_button = 9 ;
+        if (joystick.getRawButtonPressed(fire_trench_start_button)) {  // go into target and fire mode.
+          limetargeting_init(50);
+        } else if (joystick.getRawButtonReleased(fire_trench_start_button)){  // leave target and fire mode.
+          limetargeting_end() ;
+        }
+        if (joystick.getRawButton(fire_trench_start_button) == true ) {   // do stuff DURING target-and-fire mode.
+          do_tilting_pid() ;
+          limepidtargeting(1.5,0,0) ;
+          if (ready_to_fire == true && current_tilt_location == "angle"){ // FIRE!
+              dialMotor.set(-1) ;
+              run_shooter_wheels_for_shooting_out(.9);
+          }
+        } 
     
     
     else { // we are NOT targeting:  button 7 is NOT pushed.
@@ -986,12 +1003,12 @@ public class Robot extends TimedRobot {
         winchMotor.set(0);
       }
       // DEPLOY motor.
-      if (Math.abs(deploy) > .01) {
-        if ( deploy < 0 && climbSwitch.getAverageVoltage() < 2 ) {
-          deployMotor.set(0) ;
-        } else {
+      if (Math.abs(deploy) > .03) {
+     //   if ( deploy < 0 && climbSwitch.getAverageVoltage() < 2 ) {
+     //     deployMotor.set(0) ;
+     //   } else {
           deployMotor.set(deploy);
-        }
+     //   }
       } else {
         deployMotor.set(0) ;
       }
@@ -1157,11 +1174,11 @@ public class Robot extends TimedRobot {
     if (deployInControl.getBoolean(false)) {
       deployMotor.set(.8);
     } else if (deployOutControl.getBoolean(false)){
-      if (climbSwitch.getAverageVoltage() > 2){
+    //  if (climbSwitch.getAverageVoltage() > 2){
         deployMotor.set(-.8) ;
-      } else {
-        deployMotor.set(0) ;
-      }
+     // } else {
+     //   deployMotor.set(0) ;
+     // }
     } else {
       deployMotor.set(0);
     }
